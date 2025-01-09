@@ -1,3 +1,5 @@
+// Oppgave 3:
+
 // Compile with `gcc foo.c -Wall -std=gnu99 -lpthread`, or use the makefile
 // The executable will be named `foo` if you use the makefile, or `a.out` if you use gcc directly
 
@@ -45,3 +47,5 @@ int main(){
     printf("The magic number is: %d\n", i);
     return 0;
 }
+
+

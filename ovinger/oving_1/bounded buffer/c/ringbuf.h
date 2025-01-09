@@ -2,7 +2,7 @@
 
 struct RingBuffer {
     int* buffer;
-    int capacity;
+    int capacity; 
     
     int insertIdx;
     int removeIdx;

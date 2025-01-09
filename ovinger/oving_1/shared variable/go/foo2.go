@@ -5,23 +5,24 @@ package main
 import (
     . "fmt"
     "runtime"
-    "time"
 )
 
 var i = 0
 
-func incrementing() {
+func incrementing(done chan bool) {
     //TODO: increment i 1000000 times
     for j := 0; j < 1000000; j++ {
         i++
     }
+	done <- true
 }
 
-func decrementing() {
+func decrementing(done chan bool) {
     //TODO: decrement i 1000000 times
     for j := 0; j < 1000000; j++ {
         i--
     }
+	done <- true
 }
 
 func main() {
@@ -29,13 +30,18 @@ func main() {
     runtime.GOMAXPROCS(2)    
 	// two threads to run the two functions concurrently
 
+	done := make(chan bool, 2)
 
     // TODO: Spawn both functions as goroutines
-    go incrementing()
-    go decrementing()
+    go incrementing(done)
+    go decrementing(done)
 
+	for k:= 0; k < 2; k++{
+		select {
+			case <- done:
+		}
+	}
     // We have no direct way to wait for the completion of a goroutine (without additional synchronization of some sort)
     // We will do it properly with channels soon. For now: Sleep.
-    time.Sleep(500*time.Millisecond)
     Println("The magic number is:", i)
 }
