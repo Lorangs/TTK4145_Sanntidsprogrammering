@@ -5,7 +5,7 @@ use std::thread;
 use std::sync::{Arc, Mutex};
 
 fn main() {
-    // TODO: Find out what Arc is and why it is needed?
+    // TODO: Find out what Arc is and why it is nekeded?
     // TODO: You need to add a Mutex, should it be Arc<Mutex<i32>> or Mutex<Arc<i32>>?
     let i: Arc<i32> = Arc::new(0);
 
