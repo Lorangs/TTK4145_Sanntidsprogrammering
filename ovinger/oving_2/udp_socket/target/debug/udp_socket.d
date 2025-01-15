@@ -1,0 +1,1 @@
+/home/student/Desktop/YeahMan/TTK4145_Sanntidsprogrammering/ovinger/oving_2/udp_socket/target/debug/udp_socket: /home/student/Desktop/YeahMan/TTK4145_Sanntidsprogrammering/ovinger/oving_2/udp_socket/src/main.rs
