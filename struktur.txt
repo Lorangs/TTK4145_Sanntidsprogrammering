@@ -2,7 +2,7 @@ Strukturtre for Heisprosjekt
 
 Primary Backup system er grunntanken
 Kun enkle beskjeder blir sendt mellom Master og slave.
-Backup får alltid siste kopi av Variablene til master
+Backup får alltid siste kopi av Variablene til master fdsa
 
 Master:
     Variable:
