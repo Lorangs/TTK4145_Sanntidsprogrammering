@@ -1,0 +1,1 @@
+/home/student/Desktop/YeahMan/TTK4145_Sanntidsprogrammering/driver_rust/target/debug/libdriver_rust.rlib: /home/student/Desktop/YeahMan/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/elev.rs /home/student/Desktop/YeahMan/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/poll.rs /home/student/Desktop/YeahMan/TTK4145_Sanntidsprogrammering/driver_rust/src/lib.rs

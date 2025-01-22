@@ -1,0 +1,11 @@
+{
+    "elevator_ip_list": [
+        "localhost:15657",
+        "localhost:8081",
+        "localhost:8082"
+    ],
+    "number_of_floors": 4,
+    "door_open_duration_s": 3.0,
+    "input_poll_rate_ms": 25
+
+}
