@@ -1,0 +1,132 @@
+Strukturtre for Heisprosjekt
+
+Primary Backup system er grunntanken
+Kun enkle beskjeder blir sendt mellom Master og slave.
+Backup får alltid siste kopi av Variablene til master
+
+Master:
+    Variable:
+        config          config slik den er lest av Config fil, Eventuelt justert i forhold til opprative maskiner
+
+        Hoved_Kø        Hoved kø hvor alle nye ordre kommer inn
+        slave1_Kø       Kø til slave1
+        slave2_Kø       Kø til slave2
+        .
+        .
+        .
+        slaveN_kø       Kø til slaveN
+        
+    
+
+    Funksjoner:
+
+        Init(): 
+            Initialiserer Master enhet.
+            Send melding til alle maskiner og vent på bekreftelse for å initialisere alle maskiner. 
+            Maskiner som ikke svarer blir tatt ut av config listen.
+            Print initialiserte maskiner til terminal / log 
+
+            Backup plukkes fra øverste tilgjenelige maskin.
+            Send forespørsel til backup om å initialisere.
+            Vent på svar fra Backup
+            Send Variable til Backup
+
+        Update_Backup()
+            Oppdater Backup med alle variable, eventuelt kun oppdateringer siden sist.
+            Kan enten sende data periodisk etter gitt tidsintervall, eller sporadisk når variable er oppdatert.
+            
+            Dersom ikke backup svarer innen backup_timeout: Set_New_Backup()
+        
+        Set_New_Backup()
+            Setter ny backup fra listen over tilgjengelige maskiner
+
+        Recive_New_Order()
+            Legg til ny ordre til Hoved_Kø
+        
+        Distribute_Order
+            Pop ordre fra Hoved_Kø og tildeles til best tilpassede slave_i_Kø
+        
+        Send_Order()
+            Send ordre fra slave_i_Kø til gjeldende slave
+            Dersom bekreftelse ikke mottas innen slave_timeout: Set_slave_inactive
+
+        Set_slave_inctive()
+            Setter en slave inaktiv i listen over tilgjengelige maskiner
+            Ordre fra Slave_i_Kø sorteres tilbake til Hoved_Kø, og distribueres derfra.
+
+        
+        
+
+
+
+Backup:
+    Variable:
+        Tilsvarende som Master
+
+    Funksjoner
+        Init()
+            Initialiser som backup.
+            Alloker minne for variable fra master
+            Send Bekreftelse tilbake til maskiner
+        
+        Recive_Backup_data()
+            Motta data fra Master som overskriver egne variable
+        
+        Master_timeout()
+            Hvis Master ikke har sendt melding innen config.master_timout, overta som master.
+            Kjør Master Init().
+            Marker forrige master som inaktiv
+            Forespør ny backup fra neste heis i listen over tilgjengelige fra config.elevator_ip_list
+
+
+
+
+Slave:
+    Variable:
+        Master ID       IP adressen til Master. Overskrives hvis ny master settes.
+        nxt_order       Neste ordre
+
+
+    Funksjoner
+        Init()
+            Initialiser ny slave
+            Send bekreftelse tilbake til Master
+
+        Send_new_order()
+            Sender ny ordre til Master
+
+        Send_order_confirmed()
+            Sender bekreftelse på forrige ordre gjennomført
+        
+        Recive_New_Order()
+            Overskriver nxt_order med ny ordre motatt fra Master
+        
+
+
+
+TCP kommunikasjon:
+    Struktur på meldinger:
+        [ MeldingsType, Info ]
+    
+    enum MeldingsType {
+        0   Error State
+        1   Init
+        2   New_Order 
+    }
+
+    enum ErrorState {
+        0   Ok 
+        1   Nød_Stopp
+        2   Dør_Obstruksjon
+        3   Nettverk
+        4   Spenning_Forsyning
+    }
+
+
+
+Config:
+    elevator_ip_list:   [ Liste med statisk IP adresser til alle maskiner ]
+    number_of_floors:   antall etasjer
+    input_poll_rate:    tidning mellom hver send
+    Master_timeout:     tidning før ny master initialiseres. Bør ikke være lik Backup_timeout
+    Backup_timeout      tidning før ny backup initialiseres. Bør ikke være lik Master_timeout
