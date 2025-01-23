@@ -1,11 +1,14 @@
 {
     "elevator_ip_list": [
-        "localhost:15657",
-        "localhost:8081",
-        "localhost:8082"
+        "localhost",
+        "localhost",
+        "localhost"
     ],
-    "number_of_floors": 4,
+    "master_port":          15657,
+    "backup_port":          8082,
+    "slave_port":           8081,
+    "number_of_floors":     4,
     "door_open_duration_s": 3.0,
-    "input_poll_rate_ms": 25,
-    "master_timeout_ms": 1000
+    "input_poll_rate_ms":   25,
+    "master_timeout_ms":    1000
 }

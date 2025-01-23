@@ -6,7 +6,7 @@ Backup får alltid siste kopi av Variablene til master
 
 Master:
     Variable:
-        config          config slik den er lest av Config fil, Eventuelt justert i forhold til opprative maskiner
+        config          config slik den er lest av Config fil, Denne listen blir justert i forhold til opprative maskiner.
 
         Hoved_Kø        Hoved kø hvor alle nye ordre kommer inn
         slave1_Kø       Kø til slave1
@@ -16,12 +16,14 @@ Master:
         .
         slaveN_kø       Kø til slaveN
         
-    
+        Hall_Buttons    liste med knapper utenfor hver etasje. En opp og en ned, utenom i øverste og Nederste 
 
     Funksjoner:
 
         Init(): 
             Initialiserer Master enhet.
+            Sett antall Hall_Buttons til å tilsvare antall etasjer. Øverste og nederste har kun en retning
+
             Send melding til alle maskiner og vent på bekreftelse for å initialisere alle maskiner. 
             Maskiner som ikke svarer blir tatt ut av config listen.
             Print initialiserte maskiner til terminal / log 
@@ -54,6 +56,8 @@ Master:
             Setter en slave inaktiv i listen over tilgjengelige maskiner
             Ordre fra Slave_i_Kø sorteres tilbake til Hoved_Kø, og distribueres derfra.
 
+        Hall_Call()
+            Leser av knappene utenfor hver etasje for å motta nye forespørsler om heis til den spesifikke etasjen
         
         
 
@@ -86,6 +90,7 @@ Slave:
         Master ID       IP adressen til Master. Overskrives hvis ny master settes.
         nxt_order       Neste ordre
 
+        Elevator e      instans av Heis fra driver
 
     Funksjoner
         Init()
@@ -98,8 +103,10 @@ Slave:
         Send_order_confirmed()
             Sender bekreftelse på forrige ordre gjennomført
         
-        Recive_New_Order()
+        Recieve_New_Order()
             Overskriver nxt_order med ny ordre motatt fra Master
+        
+        Recieve_Master_ip ()
         
 
 

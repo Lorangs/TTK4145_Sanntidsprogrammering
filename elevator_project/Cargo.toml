@@ -8,3 +8,4 @@ driver_rust = { path = "../driver_rust", version = "0.1.0" }
 serde_json = { version = "1.0.137" }
 serde = { version = "1.0", features = ["derive"] }
 crossbeam-channel = "0.5"
+
