@@ -4,23 +4,22 @@ use driver_rust::elevio::elev as e;
 use std::path::Path;   
 use std::thread::*;
 use std::time::*;
-
 use std::io::ErrorKind;
-
 use crossbeam_channel as cbc;
-
-mod config;
-
+use elevator_project::elev::*;
 
 
 fn main() -> std::result::Result<(), std::io::Error> {
+
+    test::test_Config();
+
     let path = Path::new("config.json");
     let config = config::config(&path)?;
     println!("[MAIN]\t\tStarting elevator driver");
 
 
     let elevator = match e::Elevator::init(
-        config::get_full_ip_address(config.elevator_ip_list[0].as_string(), config.master_ip), 
+        &config::get_full_ip_address(&config.elevator_ip_list[0], config.master_port), 
         config.number_of_floors) 
         {
             Ok(elevator) => elevator,
