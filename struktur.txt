@@ -59,12 +59,15 @@ Master:
             Send ordre fra slave_i_Kø til gjeldende slave
             Dersom bekreftelse ikke mottas innen slave_timeout: Set_slave_inactive
 
-
-
+        Kill_Slave( slave i ) 
+            Dreper slave nr i.
         
+        Kill_Backup ()
+            Initialiserer ny backup, forså å drepe den forrige.
         
-
-
+        Kill_MySelf ()
+            Dreper seg selv.
+        
 
 Backup:
     Variable:
@@ -86,7 +89,10 @@ Backup:
             Forespør ny backup fra neste heis i listen over tilgjengelige fra config.elevator_ip_list
 
         Master_Inti()
-
+            Inititaliserer seg selv som ny master
+        
+        Kill_MySelf()
+            Dreper seg selv. Denne funksjonen kan også startes på ordre fra Master.
 
 
 
@@ -120,11 +126,26 @@ Slave:
 
         Local_operaton()
             Lokal operasjon hvis nettverksfeil. Håndterer interne ordre fra Current_cab_calls og innkommende nye Cab Calls. 
-
-    
+        
+        Kill_MySelf()
+            Dreper seg selv.  
         
 
-        
+Floor_Bottons()
+    Egen struktur for alle floor_buttons. Identisk for alle maskiner tilkoblet på egen nettverksport. 
+    Variable:
+        floor_buttons       Liste med syv knapper fra betjeningspanel.
+        Master ID           ID til master hvor meldinger sendes. ( en TCP socket )
+
+    Funskjoner:
+        Send_order()
+            Sender ny ordre til master
+
+        Receieve_Master_ID()
+            Mottar ny Master ID
+
+        Toggle_Light()
+            Skrur lys nummer i av eller på. 
 
 
 
@@ -150,6 +171,10 @@ TCP kommunikasjon:
 
 Config:
     elevator_ip_list:   [ Liste med statisk IP adresser til alle maskiner ]
+    master_port:        Portnummer til master Instans
+    backup_port:        Portnummer til backup Instans
+    slave_port:         Portnummer til slave Instans
+    floor_buttons_port: Portnummer til floor_buttons instans
     number_of_floors:   antall etasjer
     input_poll_rate:    tidning mellom hver send
     Master_timeout:     tidning før ny master initialiseres. Bør ikke være lik Backup_timeout
