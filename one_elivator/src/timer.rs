@@ -1,23 +1,41 @@
-use std::time::Instant;
 
-static fn get_wall_time() ->f32{
-    let now = Instant::now();
-    return now;
+use std::time::{Instant, Duration};
+
+pub struct Timer {
+    pub start: Instant,
+    pub duration: Duration,
 }
 
-//usiker på ka eg ska gjer med static
-static  timerEndTime:  f32;
-static  timerActive:   i32;
+impl Timer {
+    pub fn start(duration: Duration) -> Timer {
+        Timer {
+            start: Instant::now(),
+            duration,
+        }
+    }
 
-fn timer_start(duration: f32){
-    timerEndTime    = get_wall_time() + duration;
-    timerActive     = 1;
+    pub fn time_out(&self) -> bool {
+        self.start.elapsed() >= self.duration
+    }
+
+    pub fn reset(&mut self) {
+        self.start = Instant::now();
+    }
 }
 
-fn timer_stop(){
-    timerActive = 0;
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test() {
 
-fn timer_timedOut()->i32{
-    return (timerActive  &&  (get_wall_time() > timerEndTime));
+        let mut timer = Timer::start(Duration::from_secs(5));
+        loop {
+            if timer.time_out() {
+                assert_eq!(timer.time_out(), true);
+            }
+
+        }
+    }
 }
