@@ -22,12 +22,7 @@ Master:
         slaveN_kø       Kø til slaveN
         
     
-
-    Funksjoner:
-
-        Init(): 
-            Initialiserer Master enhet.
-            Send melding til alle maskiner og vent på bekreftelse for å initialisere alle maskiner. 
+ 100644 struktur.tner og vent på bekreftelse for å initialisere alle maskiner. 
             Maskiner som ikke svarer blir tatt ut av config listen.
             Print initialiserte maskiner til terminal / log 
 
