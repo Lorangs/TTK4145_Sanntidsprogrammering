@@ -1,9 +1,10 @@
 
 use std::time::{Instant, Duration};
 
+#[derive(Debug, Clone)]
 pub struct Timer {
     pub start: Instant,
-    pub duration: Duration,
+    duration: Duration,
 }
 
 impl Timer {
@@ -35,7 +36,6 @@ mod tests {
             if timer.time_out() {
                 assert_eq!(timer.time_out(), true);
             }
-
         }
     }
 }
