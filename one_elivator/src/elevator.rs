@@ -78,7 +78,8 @@ impl Slave {
                             },
         })
     }
-    //må skjekke om for loopane har rett range, kan ver det skal ver eks:N_FLOORS-1 
+
+    
     pub fn orders_above(&self) -> bool{
         for floor in (self.floor + 1) .. self.config.number_of_floors {
             if self.orders[floor].hall_down || self.orders[floor].hall_up || self.orders[floor].cab_call {
