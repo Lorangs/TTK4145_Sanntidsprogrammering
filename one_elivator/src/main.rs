@@ -83,14 +83,12 @@ fn main(){
             }
         }
 
-        /*
-        TODO Denne delen av koden må løses
-
-        recv(channels.door_timer_tx_rx.1) -> msg => {
+        if (slave.door_timer.timeout()) {
             println!("Door closing!");
-            slave.start_moving(&channels.door_timer_tx_rx);
+            slave.elevator.door-light(false);
+            slave.start_moving(&slave);
+            
         }
-        */
 
       }
     }
