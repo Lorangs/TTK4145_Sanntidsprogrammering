@@ -4,25 +4,26 @@ use std::fs::File;
 use std::path::Path;  
 use std::io::BufReader; 
 use std::io::Error;
+use std::result::Result;
 
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Config {
-    pub elevator_ip_list: Vec<String>,
-    pub master_port: u16,
-    pub backup_port: u16,
-    pub slave_port: u16,
-    pub number_of_floors: u8,
-    pub door_open_duration_s: f32,
-    pub input_poll_rate_ms: u64,
+    pub elevator_ip_list        : Vec<String>,
+    pub master_port             : u16,
+    pub backup_port             : u16,
+    pub slave_port              : u16,
+    pub number_of_floors        : u8,
+    pub door_open_duration_s    : f32,
+    pub input_poll_rate_ms      : u64,
 }
 
-impl Config{
+impl Config {
     pub fn ip_to_string(&self, ) -> String {
         format!("{}:{}", ip, port)
     }
     
-    pub fn config(path: &Path) -> std::result::Result<Config, Error> {        
+    pub fn config(path: &Path) -> Result<Config, Error> {        
         println!("[CONFIG]\tReading config file");
         let file = match File::open(path){
             Ok(file) => file,

@@ -16,7 +16,8 @@ fn main() -> std::result::Result<(), std::io::Error> {
 
     let path = Path::new("config.json");
     let config = config::config(&path)?;
-    println!("[MAIN]\t\tStarting elevator driver");
+    
+    
 
 
     let elevator = match e::Elevator::init(

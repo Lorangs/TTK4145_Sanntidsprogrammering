@@ -1,44 +1,37 @@
-use queues::*;
 
 
 use crate::elev::config::Config;
 
-// Struct for slave data
-pub struct SlaveData {
-    pub ip: String,                             // IP address of slave
-    pub buffer: Buffer<u8>,                     // Buffer for orders, max capacity 255  
+#[derive(Debug, Clone, Copy)]
+pub struct Order {
+    pub hall_down   : bool,
+    pub hall_up     : bool,
+    pub cab_call    : bool,
 }
 
-impl SlaveData {
-    // Constructor
-    pub fn new(ip: String) -> Self {
-        Self {
-            ip: ip,
-            buffer: Buffer::new(255),       
-        }
-    }
-    pub fn add_order(&mut self, order: u8) {
-        self.buffer.add(order);
-    }
-    pub fn remove_order(&mut self) -> u8 {
-        self.buffer.remove().unwrap()
-    }
-    pub fn is_empty(&self) -> bool {
-        if self.buffer.size() == 0 { return true }
-        else { return false }
-    }
-
-    pub fn print(&self) {
-        println!("Buffer for slave {}: ", self.ip);
-        println!("{:?}", self.buffer);
-    }
-}
-
-
+[derive(Debug, Clone)]
 struct Master {
-    config: Config,     
-    backup: String,             // IP address of backup
-    slaves: Vec<SlaveData>,     // Vector of slaves
+    pub master_ip   :         String,                                                   // IP address of master
+    pub backup_ip   :         String,                                                   // IP address of backup
+    pub slaves_ip   :         [String, NUMBER_OF_ELEVATORS ]                            // Vector of slaves IP addresses
+    pub slaves_order:         [[Order; NUMBER_OF_FLOORS]; NUMBER_OF_ELEVATORS]          // Vector of slaves order queues
 
     
+}
+
+
+impl Master {
+    pub fn init(config: Config) -> Result<Master> {
+        Ok( Self  {
+            master_ip       : config.elevator_ip_list[0],                               // IP address of master
+            backup_ip       : config.elevator_ip_list[1],                               // IP address of backup
+            slaves_ip       : config.elevator_ip_list[0..],                             // Vector of slaves IP addresses                 
+            slaves_order    : [Order
+                                    {
+                                        hall_down   : false,
+                                        hall_up     : false,
+                                        cab_call    : false,    
+                                    }; NUMBER_OF_ELEVATORS],
+        })
+    }
 }
