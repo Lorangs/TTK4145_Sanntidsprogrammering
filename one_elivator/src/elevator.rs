@@ -50,13 +50,11 @@ pub struct Config {
 pub struct Slave {
     pub elevator        : e::Elevator,
     pub floor           : usize,
-    pub dirn            : Dirn,
+    pub direction       : Dirn,
     pub behaviour       : ElevatorBehaviour, 
     pub orders          : [Order; NUMBER_OF_FLOORS as usize],
     pub config          : Config,
     pub obstruction     : bool,
-    pub timer_tx        : cbc::Sender<()>,
-    pub timer_rx        : cbc::Receiver<()>,
 }
 
 impl Slave {
@@ -64,7 +62,7 @@ impl Slave {
         Ok( Self {
                 elevator    : e::Elevator::init(&addr, NUMBER_OF_FLOORS as u8)?,
                 floor       : usize::MAX,                                   // initialisering setter floor til -1
-                dirn        : Dirn::Stop,
+                direction   : Dirn::Stop,
                 behaviour   : ElevatorBehaviour::Idle,
                 orders      : [Order{
                                     hall_down   : false,
@@ -78,16 +76,11 @@ impl Slave {
                                 number_of_floors        : NUMBER_OF_FLOORS,
                             },
                 obstruction : false,
-                timer_tx    : cbc::unbounded::<()>().0,
-                timer_rx    : cbc::unbounded::<()>().1,
         })
     }
 
     
     pub fn orders_above(&self) -> bool{
-        if self.floor == usize::MAX {
-            return false;
-        }
         for floor in (self.floor + 1) .. self.config.number_of_floors {
             if self.orders[floor].hall_down || self.orders[floor].hall_up || self.orders[floor].cab_call {
                 return true;
@@ -106,9 +99,6 @@ impl Slave {
     }
 
     pub fn orders_here(&self) -> bool {
-        if self.floor == usize::MAX {
-            return false;
-        }
         return 
             self.orders[self.floor].hall_down  || 
             self.orders[self.floor].hall_up    || 
@@ -116,7 +106,7 @@ impl Slave {
     }
 
     pub fn should_stop(&self) -> bool{
-        match self.dirn{
+        match self.direction{
             Dirn::Down => {
                 self.orders[self.floor].hall_down ||
                 self.orders[self.floor].cab_call  ||
@@ -131,30 +121,28 @@ impl Slave {
         }
     }
 
-    pub fn choose_dirn(&self) -> (Dirn, ElevatorBehaviour) {
-        match &self.dirn {
-            Dirn::Up => { 
+    pub fn choose_direction(&self) -> (Dirn, ElevatorBehaviour) {
+        match &self.direction {
+            Dirn::Up => { return
                 if      self.orders_above() { ( Dirn::Up,   ElevatorBehaviour::Moving ) }
-                else if self.orders_below() { ( Dirn::Down, ElevatorBehaviour::Moving ) }
                 else if self.orders_here()  { ( Dirn::Down, ElevatorBehaviour::DoorOpen ) }
+                else if self.orders_below() { ( Dirn::Down, ElevatorBehaviour::Moving ) }
                 else                        { ( Dirn::Stop, ElevatorBehaviour::Idle ) }
             }
 
-            Dirn::Down => {
+            Dirn::Down => { return 
                 if      self.orders_below() { ( Dirn::Down, ElevatorBehaviour::Moving ) }
                 else if self.orders_here()  { ( Dirn::Up,   ElevatorBehaviour::DoorOpen ) }
                 else if self.orders_above() { ( Dirn::Up,   ElevatorBehaviour::Moving ) }
                 else                        { ( Dirn::Stop, ElevatorBehaviour::Idle ) }
             }
 
-            Dirn::Stop => {
+            Dirn::Stop => { return 
                 if      self.orders_here()  { ( Dirn::Stop, ElevatorBehaviour::DoorOpen ) }
                 else if self.orders_above() { ( Dirn::Up,   ElevatorBehaviour::Moving ) }
                 else if self.orders_below() { ( Dirn::Down, ElevatorBehaviour::Moving ) }
                 else                        { ( Dirn::Stop, ElevatorBehaviour::Idle ) }
             }
-            
-            // _=> ( Dirn::Stop, ElevatorBehaviour::Idle )
         }
     }
 
@@ -164,37 +152,38 @@ impl Slave {
         self.orders[self.floor].hall_up     = false;
     }
 
-    pub fn start_moving(&mut self) {
-        let (diraction, behaviour) = self.choose_dirn();
+    pub fn start_moving(&mut self, timer_tx: &cbc::Sender<bool>) {
+        let (diraction, behaviour) = self.choose_direction();
         self.behaviour = behaviour;
 
         if behaviour == ElevatorBehaviour::DoorOpen {
             println!("Stopped with door open at floor {:?}", self.floor);
             self.clear_at_current_floor();
-            timer::start_timer(&self.timer_tx, std::time::Duration::from_secs(3));
+            timer::start_timer(&timer_tx, std::time::Duration::from_secs(3));
         }
 
         match diraction {
             Dirn::Up   => {
                 self.elevator.motor_direction(e::DIRN_UP);
-                self.dirn = Dirn::Up;
+                self.direction = Dirn::Up;
             },
             Dirn::Down => {
                 self.elevator.motor_direction(e::DIRN_DOWN);
-                self.dirn = Dirn::Down;
+                self.direction = Dirn::Down;
             },
             Dirn::Stop => {
                 self.elevator.motor_direction(e::DIRN_STOP);
-                self.dirn = Dirn::Stop;
+                self.direction = Dirn::Stop;
             },
         }
     }
 
-    pub fn sync_light(&self) {
-        for order in self.orders.iter().enumerate() {
-            self.elevator.call_button_light(order.0 as u8, e::HALL_UP, order.1.hall_up);
-            self.elevator.call_button_light(order.0 as u8, e::HALL_DOWN, order.1.hall_down);
-            self.elevator.call_button_light(order.0 as u8, e::CAB, order.1.cab_call);
+    pub fn sync_lights(&self) {
+        for (floor, order) in self.orders.iter().enumerate() {
+            let floor = floor as u8;
+            self.elevator.call_button_light(floor, e::HALL_UP,    order.hall_up);
+            self.elevator.call_button_light(floor, e::HALL_DOWN,  order.hall_down);
+            self.elevator.call_button_light(floor, e::CAB,        order.cab_call);
         }
     }
 }   

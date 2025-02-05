@@ -1,37 +1,28 @@
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <unistd.h>
-
-// #include "con_load.h"
-// #include "elevator_io_device.h"
-// #include "fsm.h"
-// #include "timer.h"
-
-use crossbeam_channel as cbc;
-use elevator::Dirn;
-
 mod inputs;
 mod timer;
 mod elevator;
+use elevator::{ElevatorBehaviour, Dirn, Slave};
 
-use crate::elevator::ElevatorBehaviour;
-
+use crossbeam_channel as cbc;
+use std::time::{Duration};
 use driver_rust::elevio::elev as e;
 
 fn main(){
     
-    let mut slave = elevator::Slave::init("localhost:15657".to_string()).unwrap();
-    
+    let mut slave = Slave::init("localhost:15657".to_string()).unwrap();
+    println!("Slave initialized");
     let channels: inputs::Channels = inputs::get_channels(&slave);
+    println!("Channels initialized");
+    let (timer_tx, timer_rx) = cbc::unbounded::<bool>();
     
     // TODO kan kun implemeteres med std::fmt::Display. Dette må konstrueres for Slave
     // println!("Slave initialized:\n{}", slave);
     
     // går til neders etasje ved initialisering
     slave.behaviour = ElevatorBehaviour::Moving;
-    slave.dirn = Dirn::Down;
+    slave.direction = Dirn::Down;
     slave.elevator.motor_direction(e::DIRN_DOWN);
-    slave.sync_light();
+    slave.sync_lights();
     slave.elevator.door_light(false);
     loop {
         cbc::select! {
@@ -41,7 +32,7 @@ fn main(){
                 slave.floor = floor_sensor as usize;
                 if slave.floor == 0 {
                     slave.elevator.motor_direction(e::DIRN_STOP);
-                    slave.dirn = Dirn::Stop;
+                    slave.direction = Dirn::Stop;
                     slave.behaviour = ElevatorBehaviour::Idle;
                     break;
                 }
@@ -49,10 +40,11 @@ fn main(){
         }
     }
     
-    println!("Slave initialized:\n{:#?}", slave);
+    println!("Slave Ready:\n{:#?}", slave);
 
     loop {
       cbc::select! {
+        // Receive call button message
         recv(channels.call_button_rx) -> msg => {
             let call_button = msg.unwrap();
             println!("Received call button message: {:#?}", call_button);
@@ -63,13 +55,18 @@ fn main(){
                 2 => slave.orders[call_button.floor as usize].cab_call = true,
                 _ => panic!("Mottok ukjent knappetype"),
             }
+
+            slave.sync_lights();
+            
             match slave.behaviour {
-                ElevatorBehaviour::Idle => slave.start_moving(),
+                ElevatorBehaviour::Idle => {
+                    slave.start_moving(&timer_tx);
+                },
                 _ => {},
             }
-            slave.sync_light();
         }
-
+        
+        // Receive floor sensor message
         recv(channels.floor_sensor_rx) -> msg => {
             let floor_sensor = msg.unwrap();
             println!("Received floor sensor message: {:#?}", floor_sensor);
@@ -79,19 +76,20 @@ fn main(){
                 ElevatorBehaviour::Moving => {
                     if slave.should_stop() {
                         println!("Stopping at floor {:?}", slave.floor);
-                        slave.elevator.motor_direction(e::DIRN_STOP);
-                        slave.elevator.door_light(true);
                         slave.behaviour = ElevatorBehaviour::DoorOpen;
+                        slave.elevator.door_light(true);
                         slave.clear_at_current_floor();
-                        slave.sync_light();
+                        slave.sync_lights();
+                        slave.elevator.motor_direction(e::DIRN_STOP);
 
-                        timer::start_timer(&slave.timer_tx, std::time::Duration::from_secs(3));
+                        timer::start_timer(&timer_tx, Duration::from_secs(3));    // starting doortimer
                     }
                 },
                 _ => {},
             }
         }
 
+        // Receive stop button message
         recv(channels.stop_button_rx) -> msg => {
             let stop_button = msg.unwrap();
             println!("Stop button: {:#?}", stop_button);
@@ -106,15 +104,16 @@ fn main(){
             println!("Obstruction: {:#?}", obstr);
         }
 
-        recv(slave.timer_rx) -> _msg => {
+        // Receive timer message
+        recv(timer_rx) -> _msg => {
             if slave.obstruction {
                 //println!("Obstruction detected. Timer reset.");
-                timer::start_timer(&slave.timer_tx, std::time::Duration::from_secs(3));
+                timer::start_timer(&timer_tx, Duration::from_secs(3));
             }
             else {
                 println!("Timer expired. Door closing.");
                 slave.elevator.door_light(false);
-                slave.start_moving();
+                slave.start_moving(&timer_tx);
             }
         }
     }
