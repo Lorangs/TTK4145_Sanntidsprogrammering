@@ -1,10 +1,10 @@
 use std::io::*;
 use std::string::String;
 use std::time::Duration;
-
+use crossbeam_channel as cbc;
 use driver_rust::elevio::elev as e;
 
-use crate::timer::Timer;
+use crate::timer;
 const NUMBER_OF_FLOORS: usize = 4;
 
 #[derive(Debug, Clone, Copy)]
@@ -54,8 +54,9 @@ pub struct Slave {
     pub behaviour       : ElevatorBehaviour, 
     pub orders          : [Order; NUMBER_OF_FLOORS as usize],
     pub config          : Config,
-    pub timer           : Timer,
     pub obstruction     : bool,
+    pub timer_tx        : cbc::Sender<()>,
+    pub timer_rx        : cbc::Receiver<()>,
 }
 
 impl Slave {
@@ -76,8 +77,9 @@ impl Slave {
                                 poll_period_ms          : Duration::from_millis(25),
                                 number_of_floors        : NUMBER_OF_FLOORS,
                             },
-                timer       : Timer::init(),
                 obstruction : false,
+                timer_tx    : cbc::unbounded::<()>().0,
+                timer_rx    : cbc::unbounded::<()>().1,
         })
     }
 
@@ -169,7 +171,7 @@ impl Slave {
         if behaviour == ElevatorBehaviour::DoorOpen {
             println!("Stopped with door open at floor {:?}", self.floor);
             self.clear_at_current_floor();
-            self.timer.start(Duration::from_secs(3));
+            timer::start_timer(&self.timer_tx, std::time::Duration::from_secs(3));
         }
 
         match diraction {

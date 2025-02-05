@@ -1,19 +1,31 @@
 
 use std::time::{Instant, Duration};
 use crossbeam_channel as cbc;
-use std::thread::spawn;
+use std::thread::{spawn, sleep};
 
-#[derive(Debug, Clone)]
+
+pub fn start_timer (chanel: &cbc::Sender<()>, duration: Duration) {
+    let tx = chanel.clone();
+    spawn(move || {
+        sleep(duration);
+        let _ =  tx.send(()).unwrap();
+    });
+}
+
+
+
+
+/* #[derive(Debug, Clone)]
 pub struct Timer {
     pub start: Instant,
     duration: Duration,
     pub channel: (cbc::Sender<bool>, cbc::Receiver<bool>),
     pub reset_channel: (cbc::Sender<bool>, cbc::Receiver<bool>),
 }
+ */
 
 
-
-impl Timer {
+/* impl Timer {
     pub fn init() -> Timer {
         println!("Timer initialized");
         Timer {
@@ -23,7 +35,7 @@ impl Timer {
             reset_channel: cbc::unbounded::<bool>(),
         }
     }
-    
+
     pub fn start(&mut self, duration: Duration) {
         println!("Timer started");
         self.duration = duration;
@@ -47,5 +59,7 @@ impl Timer {
 }
 
 
+
+ */
 
 

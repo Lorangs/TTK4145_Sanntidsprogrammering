@@ -85,7 +85,7 @@ fn main(){
                         slave.clear_at_current_floor();
                         slave.sync_light();
 
-                        slave.timer.reset();   // TODO kontroller denne funksjonaliteten. tilbakestiller timer til 3 sekunder
+                        timer::start_timer(&slave.timer_tx, std::time::Duration::from_secs(3));
                     }
                 },
                 _ => {},
@@ -106,14 +106,14 @@ fn main(){
             println!("Obstruction: {:#?}", obstr);
         }
 
-        recv(slave.timer.channel.1) -> _msg => {
+        recv(slave.timer_rx) -> _msg => {
 
             if slave.obstruction {
                 println!("Obstruction detected. Timer reset.");
-                slave.timer.reset();
+                timer::start_timer(&slave.timer_tx, std::time::Duration::from_secs(3));
             }
             else {
-                println!("Timer expired. Door closing.");
+                //println!("Timer expired. Door closing.");
                 slave.elevator.door_light(false);
                 slave.start_moving();
             }
