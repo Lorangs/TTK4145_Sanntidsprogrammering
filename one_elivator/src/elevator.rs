@@ -51,36 +51,41 @@ pub struct Slave {
     pub elevator        : e::Elevator,
     pub floor           : usize,
     pub dirn            : Dirn,
-    pub behaviour       : ElevatorBehaviour,
-    pub door_timer      : Timer, 
-    pub orders          : [Order; NUMBER_OF_FLOORS],
+    pub behaviour       : ElevatorBehaviour, 
+    pub orders          : [Order; NUMBER_OF_FLOORS as usize],
     pub config          : Config,
+    pub timer           : Timer,
+    pub obstruction     : bool,
 }
 
 impl Slave {
     pub fn init(addr: String) -> Result<Slave> {
         Ok( Self {
                 elevator    : e::Elevator::init(&addr, NUMBER_OF_FLOORS as u8)?,
-                floor       : usize::MAX,                                       // initialisering setter floor til usize::MAX
+                floor       : usize::MAX,                                   // initialisering setter floor til -1
                 dirn        : Dirn::Stop,
                 behaviour   : ElevatorBehaviour::Idle,
-                door_timer  : Timer::start(Duration::from_secs(3)),
                 orders      : [Order{
                                     hall_down   : false,
                                     hall_up     : false,
                                     cab_call    : false,    
-                                }; NUMBER_OF_FLOORS],
+                                }; NUMBER_OF_FLOORS as usize],
                 config      : Config{ 
                                 clear_request_variant   : ClearOrderVariant::CvAll,
                                 ip_address              : addr,
                                 poll_period_ms          : Duration::from_millis(25),
                                 number_of_floors        : NUMBER_OF_FLOORS,
                             },
+                timer       : Timer::init(),
+                obstruction : false,
         })
     }
 
     
     pub fn orders_above(&self) -> bool{
+        if self.floor == usize::MAX {
+            return false;
+        }
         for floor in (self.floor + 1) .. self.config.number_of_floors {
             if self.orders[floor].hall_down || self.orders[floor].hall_up || self.orders[floor].cab_call {
                 return true;
@@ -99,6 +104,9 @@ impl Slave {
     }
 
     pub fn orders_here(&self) -> bool {
+        if self.floor == usize::MAX {
+            return false;
+        }
         return 
             self.orders[self.floor].hall_down  || 
             self.orders[self.floor].hall_up    || 
@@ -144,7 +152,7 @@ impl Slave {
                 else                        { ( Dirn::Stop, ElevatorBehaviour::Idle ) }
             }
             
-            _=> ( Dirn::Stop, ElevatorBehaviour::Idle )
+            // _=> ( Dirn::Stop, ElevatorBehaviour::Idle )
         }
     }
 
@@ -159,24 +167,39 @@ impl Slave {
         self.behaviour = behaviour;
 
         if behaviour == ElevatorBehaviour::DoorOpen {
-            println!("Stopping in move!");
+            println!("Stopped with door open at floor {:?}", self.floor);
             self.clear_at_current_floor();
-            self.door_timer = Timer::start(Duration::from_secs(3)); // TODO usikker på om doortimer funkerer som tiltenkt.
+            self.timer.start(Duration::from_secs(3));
         }
 
         match diraction {
-            Dirn::Up => {
+            Dirn::Up   => {
                 self.elevator.motor_direction(e::DIRN_UP);
-            }
+                self.dirn = Dirn::Up;
+            },
             Dirn::Down => {
                 self.elevator.motor_direction(e::DIRN_DOWN);
-            }
+                self.dirn = Dirn::Down;
+            },
             Dirn::Stop => {
                 self.elevator.motor_direction(e::DIRN_STOP);
-            }
+                self.dirn = Dirn::Stop;
+            },
         }
-    }   
-}    
+    }
+
+    pub fn sync_light(&self) {
+        for order in self.orders.iter().enumerate() {
+            self.elevator.call_button_light(order.0 as u8, e::HALL_UP, order.1.hall_up);
+            self.elevator.call_button_light(order.0 as u8, e::HALL_DOWN, order.1.hall_down);
+            self.elevator.call_button_light(order.0 as u8, e::CAB, order.1.cab_call);
+        }
+    }
+}   
+
+
+
+
 
  /*   
 fn requests_shouldClearImmediately(e: Elevator, btn_floor:u8, btn_type:Button)-> bool{

@@ -1,41 +1,51 @@
 
 use std::time::{Instant, Duration};
+use crossbeam_channel as cbc;
+use std::thread::spawn;
 
 #[derive(Debug, Clone)]
 pub struct Timer {
     pub start: Instant,
     duration: Duration,
+    pub channel: (cbc::Sender<bool>, cbc::Receiver<bool>),
+    pub reset_channel: (cbc::Sender<bool>, cbc::Receiver<bool>),
 }
 
+
+
 impl Timer {
-    pub fn start(duration: Duration) -> Timer {
+    pub fn init() -> Timer {
+        println!("Timer initialized");
         Timer {
             start: Instant::now(),
-            duration,
+            duration: Duration::from_secs(3),
+            channel: cbc::unbounded::<bool>(),
+            reset_channel: cbc::unbounded::<bool>(),
         }
     }
-
-    pub fn time_out(&self) -> bool {
-        self.start.elapsed() >= self.duration
+    
+    pub fn start(&mut self, duration: Duration) {
+        println!("Timer started");
+        self.duration = duration;
+        let mut timer = self.clone();
+        spawn(move || {
+            loop {
+                if timer.start.elapsed() >= timer.duration {
+                    timer.channel.0.send(true).unwrap();
+                    break;
+                }
+                if let Ok(_) = timer.reset_channel.1.try_recv() {
+                    timer.start = Instant::now();
+                }
+            }
+        });
     }
 
     pub fn reset(&mut self) {
-        self.start = Instant::now();
+        self.reset_channel.0.send(true).unwrap();
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test() {
 
-        let mut timer = Timer::start(Duration::from_secs(5));
-        loop {
-            if timer.time_out() {
-                assert_eq!(timer.time_out(), true);
-            }
-        }
-    }
-}
+
+
