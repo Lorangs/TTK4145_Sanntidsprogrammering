@@ -4,11 +4,11 @@ use crossbeam_channel as cbc;
 use std::thread::{spawn, sleep};
 
 
-pub fn start_timer (channel: &cbc::Sender<()>, duration: Duration) {
+pub fn start_timer (channel: &cbc::Sender<bool>, duration: Duration) {
     let tx = channel.clone();
     spawn(move || {
         sleep(duration);
-        let _ =  tx.send(()).unwrap();
+        let _ =  tx.send(true).unwrap();
     });
 }
 
