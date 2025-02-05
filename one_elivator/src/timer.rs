@@ -1,41 +1,14 @@
 
-use std::time::{Instant, Duration};
+use std::time::Duration;
+use crossbeam_channel as cbc;
+use std::thread::{spawn, sleep};
 
-pub struct Timer {
-    pub start: Instant,
-    pub duration: Duration,
+
+pub fn start_timer (channel: &cbc::Sender<()>, duration: Duration) {
+    let tx = channel.clone();
+    spawn(move || {
+        sleep(duration);
+        let _ =  tx.send(()).unwrap();
+    });
 }
 
-impl Timer {
-    pub fn start(duration: Duration) -> Timer {
-        Timer {
-            start: Instant::now(),
-            duration,
-        }
-    }
-
-    pub fn time_out(&self) -> bool {
-        self.start.elapsed() >= self.duration
-    }
-
-    pub fn reset(&mut self) {
-        self.start = Instant::now();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test() {
-
-        let mut timer = Timer::start(Duration::from_secs(5));
-        loop {
-            if timer.time_out() {
-                assert_eq!(timer.time_out(), true);
-            }
-
-        }
-    }
-}

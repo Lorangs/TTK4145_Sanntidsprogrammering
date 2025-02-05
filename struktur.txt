@@ -11,7 +11,7 @@ Slaven skal ha mulighet til å motta nye Cab Calls i Loca_operation()
 
 Master:
     Variable:
-        config          config slik den er lest av Config fil, Eventuelt justert i forhold til opprative maskiner
+        config          config slik den er lest av Config fil, Denne listen blir justert i forhold til opprative maskiner.
 
         Hoved_Kø        Hoved kø hvor alle nye ordre kommer inn
         slave1_Kø       Kø til slave1   
@@ -21,8 +21,15 @@ Master:
         .
         slaveN_kø       Kø til slaveN
         
-    
- 100644 struktur.tner og vent på bekreftelse for å initialisere alle maskiner. 
+        Hall_Buttons    liste med knapper utenfor hver etasje. En opp og en ned, utenom i øverste og Nederste 
+
+    Funksjoner:
+
+        Init(): 
+            Initialiserer Master enhet.
+            Sett antall Hall_Buttons til å tilsvare antall etasjer. Øverste og nederste har kun en retning
+
+            Send melding til alle maskiner og vent på bekreftelse for å initialisere alle maskiner. 
             Maskiner som ikke svarer blir tatt ut av config listen.
             Print initialiserte maskiner til terminal / log 
 
@@ -98,6 +105,7 @@ Slave:
         Current_cab_calls       Kø for interne ordre. Brukes også til indikator lamper     
         Elevator                Instans av Struct Elevator
 
+        Elevator e      instans av Heis fra driver
 
     Funksjoner
         Init()

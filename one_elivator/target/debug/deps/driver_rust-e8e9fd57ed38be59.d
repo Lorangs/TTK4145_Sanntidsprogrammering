@@ -1,0 +1,9 @@
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/one_elivator/target/debug/deps/libdriver_rust-e8e9fd57ed38be59.rmeta: /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/lib.rs /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/elev.rs /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/poll.rs
+
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/one_elivator/target/debug/deps/libdriver_rust-e8e9fd57ed38be59.rlib: /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/lib.rs /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/elev.rs /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/poll.rs
+
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/one_elivator/target/debug/deps/driver_rust-e8e9fd57ed38be59.d: /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/lib.rs /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/elev.rs /home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/poll.rs
+
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/lib.rs:
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/elev.rs:
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/driver_rust/src/elevio/poll.rs:
