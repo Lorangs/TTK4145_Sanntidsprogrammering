@@ -35,7 +35,7 @@ fn main(){
     slave.elevator.door_light(false);
     loop {
         cbc::select! {
-            recv(channels.floor_sensor_tx_rx.1) -> msg => {
+            recv(channels.floor_sensor_rx) -> msg => {
                 let floor_sensor = msg.unwrap();
                 println!("Received floor sensor message: {:#?}", floor_sensor);
                 slave.floor = floor_sensor as usize;
@@ -53,7 +53,7 @@ fn main(){
 
     loop {
       cbc::select! {
-        recv(channels.call_button_tx_rx.1) -> msg => {
+        recv(channels.call_button_rx) -> msg => {
             let call_button = msg.unwrap();
             println!("Received call button message: {:#?}", call_button);
 
@@ -70,7 +70,7 @@ fn main(){
             slave.sync_light();
         }
 
-        recv(channels.floor_sensor_tx_rx.1) -> msg => {
+        recv(channels.floor_sensor_rx) -> msg => {
             let floor_sensor = msg.unwrap();
             println!("Received floor sensor message: {:#?}", floor_sensor);
             slave.floor = floor_sensor as usize;
@@ -92,14 +92,14 @@ fn main(){
             }
         }
 
-        recv(channels.stop_button_tx_rx.1) -> msg => {
+        recv(channels.stop_button_rx) -> msg => {
             let stop_button = msg.unwrap();
             println!("Stop button: {:#?}", stop_button);
             slave.elevator.motor_direction(e::DIRN_STOP);
             slave.behaviour = ElevatorBehaviour::OutOfOrder; 
         }
 
-        recv(channels.obstruction_tx_rx.1) -> msg => {
+        recv(channels.obstruction_rx) -> msg => {
             let obstr = msg.unwrap();
             slave.obstruction = obstr;
 
@@ -107,13 +107,12 @@ fn main(){
         }
 
         recv(slave.timer_rx) -> _msg => {
-
             if slave.obstruction {
-                println!("Obstruction detected. Timer reset.");
+                //println!("Obstruction detected. Timer reset.");
                 timer::start_timer(&slave.timer_tx, std::time::Duration::from_secs(3));
             }
             else {
-                //println!("Timer expired. Door closing.");
+                println!("Timer expired. Door closing.");
                 slave.elevator.door_light(false);
                 slave.start_moving();
             }

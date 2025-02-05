@@ -6,10 +6,14 @@ use crate::elevator;
 
 #[derive(Debug, Clone)]
 pub struct Channels {
-    pub floor_sensor_tx_rx: (cbc::Sender<u8>, cbc::Receiver<u8>),
-    pub call_button_tx_rx:  (cbc::Sender<elevio::poll::CallButton>, cbc::Receiver<elevio::poll::CallButton>),
-    pub stop_button_tx_rx:  (cbc::Sender<bool>, cbc::Receiver<bool>),
-    pub obstruction_tx_rx:  (cbc::Sender<bool>, cbc::Receiver<bool>),
+    pub floor_sensor_tx:    cbc::Sender<u8>,
+    pub floor_sensor_rx:    cbc::Receiver<u8>,
+    pub call_button_tx :    cbc::Sender<elevio::poll::CallButton>,
+    pub call_button_rx :    cbc::Receiver<elevio::poll::CallButton>,
+    pub stop_button_tx :    cbc::Sender<bool>,
+    pub stop_button_rx :    cbc::Receiver<bool>,
+    pub obstruction_tx :    cbc::Sender<bool>, 
+    pub obstruction_rx :    cbc::Receiver<bool>,
 }
 
 pub fn get_channels (slave: &elevator::Slave) -> Channels {
@@ -44,9 +48,13 @@ pub fn get_channels (slave: &elevator::Slave) -> Channels {
     }
 
     Channels {
-        call_button_tx_rx:      (call_button_tx, call_button_rx),
-        floor_sensor_tx_rx:     (floor_sensor_tx, floor_sensor_rx),
-        stop_button_tx_rx:      (stop_button_tx, stop_button_rx),
-        obstruction_tx_rx:      (obstruction_tx, obstruction_rx),
+        floor_sensor_tx,
+        floor_sensor_rx,
+        call_button_tx,
+        call_button_rx,
+        stop_button_tx,
+        stop_button_rx,
+        obstruction_tx,
+        obstruction_rx,
     }
 }
