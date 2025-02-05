@@ -4,19 +4,19 @@ mod elevator;
 use elevator::{ElevatorBehaviour, Dirn, Slave};
 
 use crossbeam_channel as cbc;
-use std::time::{Duration};
+use std::time::Duration;
 use driver_rust::elevio::elev as e;
 
 fn main(){
     
     let mut slave = Slave::init("localhost:15657".to_string()).unwrap();
     println!("Slave initialized");
+
     let channels: inputs::Channels = inputs::get_channels(&slave);
     println!("Channels initialized");
-    let (timer_tx, timer_rx) = cbc::unbounded::<bool>();
     
-    // TODO kan kun implemeteres med std::fmt::Display. Dette må konstrueres for Slave
-    // println!("Slave initialized:\n{}", slave);
+    let (timer_tx, timer_rx) = cbc::unbounded::<bool>();
+    println!("Timer initialized");
     
     // går til neders etasje ved initialisering
     slave.behaviour = ElevatorBehaviour::Moving;

@@ -14,11 +14,12 @@ pub enum Dirn {
     Up = 1
 }
 
-#[derive(Debug, Clone, Copy)]
+// behøver ikke denne lenger
+/* #[derive(Debug, Clone, Copy)]
 pub enum ClearOrderVariant{
     CvAll,
     CvInDirn,
-}
+} */
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ElevatorBehaviour {
@@ -39,8 +40,8 @@ pub struct Order {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub clear_request_variant   : ClearOrderVariant,
-    pub ip_address              : String,
+    // pub clear_request_variant   : ClearOrderVariant,
+    // pub ip_address              : String,
     pub number_of_floors        : usize,   
     pub poll_period_ms          : Duration,
 }
@@ -70,8 +71,8 @@ impl Slave {
                                     cab_call    : false,    
                                 }; NUMBER_OF_FLOORS as usize],
                 config      : Config{ 
-                                clear_request_variant   : ClearOrderVariant::CvAll,
-                                ip_address              : addr,
+                                // clear_request_variant   : ClearOrderVariant::CvAll,
+                                // ip_address              : addr,
                                 poll_period_ms          : Duration::from_millis(25),
                                 number_of_floors        : NUMBER_OF_FLOORS,
                             },
