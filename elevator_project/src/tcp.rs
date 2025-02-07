@@ -1,15 +1,18 @@
 // This file contains the TCP module, which is responsible for handling the TCP connection between the elevator and the scheduler.
 
-enum Message{
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Message{
     NewOrder(u8),
-    OrderComplete(u8),
+    OrderComplete,                    
     Error(ErrorState),
 }
 
-
-enum ErrorState {
+#[derive(Serialize, Deserialize, Debug)]
+pub enum ErrorState {
     OK,
-    NødStopp,
-    DørObstruksjon,
-    Nettverk(std::io::ErrorKind),
+    EmergancyStop,
+    DoorObstruction,
+    Network(String),
 }
