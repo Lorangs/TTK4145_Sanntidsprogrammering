@@ -76,7 +76,7 @@ impl Slave {
 
     // Starter en egen tråd som mottaker av meldinger fra master
     // TODO må testes
-    fn spawn_thread_for_incoming_messages (&self) {
+    fn spawn_thread_for_incoming_messages(&self) {
         let mut master_socket_clone = self.master_socket.try_clone().expect("Failed to clone socket"); 
         let tx = self.master_message.0.clone();
         
