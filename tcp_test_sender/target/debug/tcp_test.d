@@ -1,0 +1,1 @@
+/mnt/c/Users/loran/OneDrive\ -\ NTNU/6.\ semester/TTK4145\ Sanntidsprogrammering/tcp_test_sender/target/debug/tcp_test: /mnt/c/Users/loran/OneDrive\ -\ NTNU/6.\ semester/TTK4145\ Sanntidsprogrammering/tcp_test_sender/main.rs

@@ -2,14 +2,19 @@ Strukturtre for Heisprosjekt
 
 Primary Backup system er grunntanken
 Kun enkle beskjeder blir sendt mellom Master og slave.
-Backup får alltid siste kopi av Variablene til master
+Backup får alltid siste kopi av Variablene til master.
+
+Master skiller mellom Cab Calls og Floor Calls.
+Ved mulig nettverksfeil vil kun Floorcalls bli redistribuert til de andre heisene, mens Cab Calls blir lagret i slavekøen. 
+Dersom heisen kommer tilbake på nettverk vil den få tilsendt sin egen lagrede CabCalls kø, som blir første prioitering for heisen.
+Slaven skal ha mulighet til å motta nye Cab Calls i Loca_operation()
 
 Master:
     Variable:
         config          config slik den er lest av Config fil, Denne listen blir justert i forhold til opprative maskiner.
 
         Hoved_Kø        Hoved kø hvor alle nye ordre kommer inn
-        slave1_Kø       Kø til slave1
+        slave1_Kø       Kø til slave1   
         slave2_Kø       Kø til slave2
         .
         .
@@ -40,28 +45,31 @@ Master:
             Dersom ikke backup svarer innen backup_timeout: Set_New_Backup()
         
         Set_New_Backup()
-            Setter ny backup fra listen over tilgjengelige maskiner
+            Setter ny backup fra listen over tilgjengelige maskiner.
+        
+        Set_slave_inative()
+            Setter en slave inaktiv i listen over tilgjengelige maskiner
+            Ordre fra Slave_i_Kø sorteres tilbake til Hoved_Kø, og distribueres derfra.
 
         Recive_New_Order()
             Legg til ny ordre til Hoved_Kø
         
-        Distribute_Order
+        Distribute_Order ()
             Pop ordre fra Hoved_Kø og tildeles til best tilpassede slave_i_Kø
         
         Send_Order()
             Send ordre fra slave_i_Kø til gjeldende slave
             Dersom bekreftelse ikke mottas innen slave_timeout: Set_slave_inactive
 
-        Set_slave_inctive()
-            Setter en slave inaktiv i listen over tilgjengelige maskiner
-            Ordre fra Slave_i_Kø sorteres tilbake til Hoved_Kø, og distribueres derfra.
-
-        Hall_Call()
-            Leser av knappene utenfor hver etasje for å motta nye forespørsler om heis til den spesifikke etasjen
+        Kill_Slave( slave i ) 
+            Dreper slave nr i.
         
+        Kill_Backup ()
+            Initialiserer ny backup, forså å drepe den forrige.
         
-
-
+        Kill_MySelf ()
+            Dreper seg selv.
+        
 
 Backup:
     Variable:
@@ -82,13 +90,20 @@ Backup:
             Marker forrige master som inaktiv
             Forespør ny backup fra neste heis i listen over tilgjengelige fra config.elevator_ip_list
 
+        Master_Inti()
+            Inititaliserer seg selv som ny master
+        
+        Kill_MySelf()
+            Dreper seg selv. Denne funksjonen kan også startes på ordre fra Master.
 
 
 
 Slave:
     Variable:
-        Master ID       IP adressen til Master. Overskrives hvis ny master settes.
-        nxt_order       Neste ordre
+        Master ID               IP adressen til Master. Overskrives hvis ny master settes.
+        nxt_order               Neste ordre
+        Current_cab_calls       Kø for interne ordre. Brukes også til indikator lamper     
+        Elevator                Instans av Struct Elevator
 
         Elevator e      instans av Heis fra driver
 
@@ -97,17 +112,43 @@ Slave:
             Initialiser ny slave
             Send bekreftelse tilbake til Master
 
-        Send_new_order()
+        Send_new_cab_order()
             Sender ny ordre til Master
 
-        Send_order_confirmed()
+        Send_order_complete()
             Sender bekreftelse på forrige ordre gjennomført
         
-        Recieve_New_Order()
+        Receive_New_Order()
             Overskriver nxt_order med ny ordre motatt fra Master
+
+        Receieve_Master_ID()
+            Mottar ID fra master 
         
-        Recieve_Master_ip ()
+        Execute_Order()
+            Utfører ordre fra nxt_order variabel
+
+        Local_operaton()
+            Lokal operasjon hvis nettverksfeil. Håndterer interne ordre fra Current_cab_calls og innkommende nye Cab Calls. 
         
+        Kill_MySelf()
+            Dreper seg selv.  
+        
+
+Floor_Bottons()
+    Egen struktur for alle floor_buttons. Identisk for alle maskiner tilkoblet på egen nettverksport. 
+    Variable:
+        floor_buttons       Liste med syv knapper fra betjeningspanel.
+        Master ID           ID til master hvor meldinger sendes. ( en TCP socket )
+
+    Funskjoner:
+        Send_order()
+            Sender ny ordre til master
+
+        Receieve_Master_ID()
+            Mottar ny Master ID
+
+        Toggle_Light()
+            Skrur lys nummer i av eller på. 
 
 
 
@@ -133,6 +174,10 @@ TCP kommunikasjon:
 
 Config:
     elevator_ip_list:   [ Liste med statisk IP adresser til alle maskiner ]
+    master_port:        Portnummer til master Instans
+    backup_port:        Portnummer til backup Instans
+    slave_port:         Portnummer til slave Instans
+    floor_buttons_port: Portnummer til floor_buttons instans
     number_of_floors:   antall etasjer
     input_poll_rate:    tidning mellom hver send
     Master_timeout:     tidning før ny master initialiseres. Bør ikke være lik Backup_timeout
