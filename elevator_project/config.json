@@ -6,7 +6,7 @@
     ],
     "master_port"           : 15657,
     "backup_port"           : 8082,
-    "slave_port"            : 8081,
+    "slave_port"            : 15657,
     "number_of_floors"      : 4,
     "number_of_elevators"   : 3,
     "door_open_duration_s"  : 3.0,
