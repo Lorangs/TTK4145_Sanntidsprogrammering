@@ -11,7 +11,7 @@ pub struct Order {
 
 
 
-#[derive(Debug, Clone)]
+/* #[derive(Debug, Clone)]
 struct Master {
     pub master_ip   :         String,                                                   // IP address of master
     pub backup_ip   :         String,                                                   // IP address of backup
@@ -36,4 +36,4 @@ impl Master {
                                     }; NUMBER_OF_ELEVATORS],
         }
     }
-}
+} */
