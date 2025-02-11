@@ -10,7 +10,7 @@ pub const CAB       : u8 = 2;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message{
-    NewOrder(u8, u8),
+    NewOrder(u8, u8),           // Floor, Button_type
     OrderComplete,                    
     Error(ErrorState),
 }

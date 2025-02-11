@@ -1,53 +1,58 @@
-use std::fmt::Result;
-use std::{thread, time};
+use std::thread::{spawn, sleep};
 use std::process::Command;
 use std::io::{Write, BufReader, BufRead, BufWriter};
 use std::net::{TcpListener, TcpStream};
+use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
-use bincode::Config;
+
 use serde::{Serialize, Deserialize};
-use serde_json;
-use crate::{tcp, slave};
+
+use crate::{tcp, slave, config, inputs};
+
+use driver_rust::elevio::poll::CallButton;
 
 const ADDRESS: &str = "127.0.0.1:4000";
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Queues {
-    pub main_queue: VecDeque<Vec<u8>>,
-    pub slave_queues: Vec<VecDeque<u8>>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MasterQueues {
+    pub hall_queue: VecDeque<(u8, u8)>,     // (floor, button_type) for external hall calls.
+    pub cab_queues: Vec<VecDeque<u8>>,      // Vector of slave queues for internal cab calls.  ref driver_rust::elevio::poll::CallButton
 }
 
-impl Queues {
-    pub fn new() -> Self {
-        Self {
-            main_queue: VecDeque::new(),
-            slave_queues: vec![VecDeque::new(), VecDeque::new(), VecDeque::new()],
+impl MasterQueues {
+    pub fn init() -> MasterQueues {
+        let hall_queue      : VecDeque<(u8, u8)>    = VecDeque::new();
+        let cab_queues      : Vec<VecDeque<u8>>     = Vec::new();
+        
+        MasterQueues {
+            hall_queue,
+            cab_queues,
         }
     }
 
-    pub fn add_to_main_que(&mut self, floor: u8, direction: u8) {
-        self.main_queue.push_back(vec![floor, direction]);
+    pub fn add_to_hall_queue(&mut self, floor: u8, direction: u8) {
+        self.hall_queue.push_back((floor, direction));
     }
 
-    pub fn add_to_slave_que(&mut self, slave: usize, floor: u8) {
-        if slave < self.slave_queues.len() {
-            self.slave_queues[slave].push_back(floor);
+    pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
+        if self.cab_queues.len() > slave_num as usize {
+            self.cab_queues[slave_num as usize].push_back(floor);
         } else {
-            println!("Error: Slave queue index {} is out of bounds!", slave);
+            println!("Error: Slave queue index {} is out of bounds!", slave_num);
         }
     }
+}
 
-    pub fn print_que(&self) {
-        println!("Main Queue:");
-        for (index, item) in self.main_queue.iter().enumerate() {
-            println!("  Place {}: {:?}", index, item);
-        }
-        println!("\nSlave Queues:");
-        for (index, item) in self.slave_queues.iter().enumerate() {
-            println!("  Slave {}: {:?}", index, item);
-        }
+impl FmtDisplay for MasterQueues {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(
+            f, 
+            "Hall queue: {:?}\n\
+            Cab queues: {:?}", 
+            self.hall_queue, 
+            self.cab_queues)
     }
 }
 
@@ -58,144 +63,113 @@ pub struct Order {
     pub cab_call    : bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Master {
-    pub config              : Config,                                                   // Config struct
+    pub config              : config::Config,                                           // Config struct
     pub master_ip           : String,                                                   // IP address of master
     pub backup_ip           : String,                                                   // IP address of backup
-    pub slaves_ip           : [String; NUMBER_OF_ELEVATORS ],                           // Vector of slaves IP addresses
-    pub slaves_order        : [[Order; NUMBER_OF_FLOORS]; NUMBER_OF_ELEVATORS],         // Vector of slaves order queues  
-    slave_sockets           : Vec<Option<TcpStream>>,                                   // Vector of slave sockets
-    backup_socket           : TcpStream,                                                // Backup socket
+    pub slaves_ip           : Vec<String>,                                              // Vector of slaves IP addresses
+    pub slaves_order        : MasterQueues,                                             // Vector of slaves order queues  
+
+    //slave_sockets           : Vec<Option<TcpStream>>,                                   // Vector of slave sockets
+    //backup_socket           : TcpStream,                                                // Backup socket
 }
 
 
 impl Master {
     pub fn init(
-        config              : Config,
+        config              : config::Config,
         master_ip           : String
-    ) -> Result<Master> {
+    ) -> Result<Master, String> {
 
-        let conf            : Config            = config.clone();
-        let backup_ip       : String            = match config.elevator_ip_list.iter().find(|&&ip| ip != master_ip) {
+        let conf            : config::Config    = config.clone();
+        let backup_ip       : String            = match config.elevator_ip_list.iter().find(|&ip| *ip != master_ip) {
                                                             Some(ip) => ip.to_string() + ":" + &config.backup_port.to_string(),
-                                                            None     => return Err("No valid backup IP found")
+                                                            None     => return Err("No valid backup IP found".to_string())
                                                         };
                                                         
-        let backup_socket   : TcpStream         = match TcpStream::connect(backup_ip) {
+                                                        // Create listener socket for incoming slave connections. Listen on all interfaces.
+        let slave_listener  : TcpListener       = match TcpListener::bind("0.0.0.0".to_string() + ":" + &config.slave_port.to_string()) {
+                                                            Ok(listener) => listener,
+                                                            Err(_)      => return Err("Failed to bind listener".to_string())
+                                                        };
+
+        let backup_listener : TcpListener       = match TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string()) {
+                                                            Ok(listener) => listener,
+                                                            Err(_)      => return Err("Failed to bind listener".to_string())
+                                                        };
+        
+        spawn(move || {
+            loop {
+                for stream in slave_listener.incoming() {
+                    match stream {
+                        Ok(stream) => {
+                            println!("Ny slave-tilkobling: {}", stream.peer_addr().unwrap());
+                            inputs::handle_master_clients(stream, config.input_poll_rate_ms);
+                            
+                        }
+                        Err(_) => { println!("Failed to connect to slave"); }
+                    }
+                }
+                sleep(std::time::Duration::from_millis(config.input_poll_rate_ms));
+            }
+        });
+/*  
+        let backup_socket   : TcpStream         = match TcpStream::connect(&backup_ip) {
                                                         Ok(socket)  => socket,
-                                                        Err(e)          => return Err("Failed to connect to backup")
+                                                        Err(_)          => return Err("Failed to connect to backup".to_string())
                                                     };
 
-        let mut slave_sockets: Vec<Option<TcpStream>> = config.elevator_ip_list.iter()
-                                                                    .map(|ip| {
+        let slave_sockets: Vec<Option<TcpStream>> = config.elevator_ip_list.iter().map(|ip| {
                                                                         match TcpStream::connect(ip.to_string() + ":" + &config.slave_port.to_string()) {
                                                                             Ok(socket)  => Some(socket),
                                                                             Err(_)          => None
                                                                         }
-                                                                    })
-                                                                    .collect();
-
-        Ok(Self {
+                                                                    }).collect();
+ */
+        Ok(Master {
             config          : conf,
-            master_ip       : master_ip,                               // IP address of master
+            master_ip       : master_ip,                              // IP address of master
             backup_ip       : backup_ip,                              // IP address of backup
-            slaves_ip       : config.elevator_ip_list,                  // Vector of slaves IP addresses                 
-            slaves_order    : [Order
-                                    {
-                                        hall_down   : false,
-                                        hall_up     : false,
-                                        cab_call    : false,    
-                                    }; NUMBER_OF_ELEVATORS],
-            backup_socket   : backup_socket,
-            slave_sockets   : slave_sockets,
+            slaves_ip       : config.elevator_ip_list,                // Vector of slaves IP addresses                 
+            slaves_order    : MasterQueues::init(),                   // Vector of slaves order queues
+
+            //slave_sockets   : slave_sockets,
         })
     }
 
-    pub fn backup_task(queues: Arc<Mutex<Queues>>) {
-        println!("Trying to connect to a primary at {}", ADDRESS);
-        match TcpStream::connect(ADDRESS) {
-            Ok(stream) => {
-                println!("Connected to primary, acting as backup.");
-                let reader = BufReader::new(stream);
+    fn send_order_to_slave(&self, slave_num: u8, order: Order) {
+        let message = tcp::Message::Order {
+            slave_num,
+            order,
+        };
+        let encoded = bincode::serialize(&message).unwrap();
+        let mut sock = self.slave_sockets[slave_num as usize].as_ref().unwrap().try_clone().unwrap();
+        sock.write(&encoded).unwrap();
+    }
 
-                for line in reader.lines() {
-                    match line {
-                        Ok(msg) => {
-                            println!("Backup: Received full message: {:?}", msg);
-                            match serde_json::from_str::<Message>(&msg) {
-                                Ok(Message::Queues(q)) => {
-                                    *queues.lock().unwrap() = q;
-                                    queues.lock().unwrap().print_que();
+    fn 
+
+    fn master_loop(&mut self) {
+        loop {
+            cbc::select! {
+
+                recv(self.slave_sockets[0].as_ref().unwrap(), message) -> msg => {
+                    match msg {
+                        Ok(message) => {
+                            match message {
+                                tcp::Message::Order {slave_num, order} => {
+                                    self.slaves_order.add_to_cab_queue(slave_num, 1);
                                 }
-                                Ok(_) => println!("Backup: Received a non-queue message."),
-                                Err(e) => println!("Backup: Failed to parse JSON: {}", e),
+                                _ => {}
                             }
                         }
-                        Err(_) => {
-                            println!("Backup: Connection lost, becoming primary");
-                            return;
-                        }
+                        Err(_) => {}
                     }
-                    thread::sleep(time::Duration::from_secs(1));
                 }
             }
-            Err(_) => {
-                println!("Could not connect to a primary... becoming primary");
-                return;
-            }
         }
-    }
+    } 
 
-    pub fn primary_task(mut stream: TcpStream, queues: Arc<Mutex<Queues>>) {
-        let mut writer = BufWriter::new(&stream);
-
-        loop {
-            let mut q = queues.lock().unwrap();
-            q.add_to_main_que(1, 1);
-            q.add_to_slave_que(1, 3);
-
-            let message = serde_json::to_string(&Message::Queues(q.clone())).unwrap();
-
-            match writeln!(writer, "{}", message) {
-                Ok(_) => writer.flush().unwrap(),
-                Err(_) => {
-                    println!("Primary: Backup disconnected.");
-                    break;
-                }
-            }
-
-            println!("Primary: Updated backup with current queue:");
-            q.print_que();
-            thread::sleep(time::Duration::from_secs(3));
-        }
-    }
 }
 
-fn main() {
-    let queues: Arc<Mutex<Queues>> = Arc::new(Mutex::new(Queues::new()));
-
-    // Try to be backup
-    backup(queues.clone());
-
-    // If backup fails, become primary
-    let listener = TcpListener::bind(ADDRESS).expect("Could not start TCP server");
-    println!("Primary: Listening on {}", ADDRESS);
-
-    loop {
-        println!("Primary: Starting a backup...");
-
-        Command::new("cargo")
-            .args(["run", "--bin", "test"])
-            .spawn()
-            .expect("Failed to start backup");
-
-        if let Ok((stream, _)) = listener.accept() {
-            println!("Primary: Backup connected!");
-            primary_task(stream, queues.clone());
-        }
-
-        println!("Primary: Backup has exited, starting a new one.");
-    }
-}
- */

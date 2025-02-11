@@ -39,9 +39,8 @@ pub struct Slave {
     obstruction                         : bool,
     direction                           : Direction,
     behaviour                           : ElevatorBehaviour, 
-    channels                            : inputs::SlaveChannels,                 // TODO: Kanskje dette bør være en del av slaven? så slipper vi å initiallisere den i main som Option
+    channels                            : inputs::SlaveChannels,                 
     master_socket                       : TcpStream,    
-    //master_message                      : (cbc::Sender<tcp::Message>    , cbc::Receiver<tcp::Message>),
     door_timer                          : (cbc::Sender<bool>            , cbc::Receiver<bool>),
 }
 

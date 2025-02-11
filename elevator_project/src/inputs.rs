@@ -102,7 +102,44 @@ impl fmt::Display for SlaveChannels {
 pub struct MasterChannels {
     pub slave_vector_rx    : Vec<cbc::Receiver<tcp::Message>>,
     pub backup_rx          : cbc::Receiver<tcp::Message>,
+
 }
+
+
+// TODO: Implement this function and rename 
+pub fn handle_master_clients(stream: TcpStream, input_poll_rate_ms: u64) -> cbc::Receiver<tcp::Message> {
+    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
+    let (master_tx, master_rx) = cbc::unbounded::<tcp::Message>();
+    spawn(move || {
+        let mut encoded = [0; 1024];
+        loop{
+            match stream.read(&mut encoded) {
+                Ok(size) => {
+                    if size > 0 {
+                        let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                        println!("[MASTER]\tReceived message from client: {:#?}", message);
+                        master_tx.send(message).unwrap();
+                    }
+                }
+                Err(e) => {
+                    println!("[MASTER]\tFailed to read from stream: {}", e);
+                    continue;               // TODO: Sjekk om dette er riktig
+                    // return e;
+                }
+            }            
+            sleep(poll_period);
+        }
+    });
+    master_rx
+}
+
+pub fn spawn_threads_for_master_inputs(, input_poll_rate_ms: u64) -> MasterChannels {
+    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);  
+
+    // slave_vec_rx is a vector of receivers, one for each slave
+}
+
+/* 
 
 pub fn spawn_threads_for_master_inputs(slave_sockets: &Vec<TcpStream>, backup_socket: &TcpStream, input_poll_rate_ms: u64) -> MasterChannels {
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);  
@@ -168,4 +205,4 @@ pub fn spawn_threads_for_master_inputs(slave_sockets: &Vec<TcpStream>, backup_so
         slave_vector_rx : slave_vec_rx,
         backup_rx       : backup_rx,
     }
-}
+} */
