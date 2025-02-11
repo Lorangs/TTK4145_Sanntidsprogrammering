@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message{
-    NewOrder(u8),
+    NewOrder(u8, u8),
     OrderComplete,                    
     Error(ErrorState),
 }
