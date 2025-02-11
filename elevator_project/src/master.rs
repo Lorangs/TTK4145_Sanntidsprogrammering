@@ -1,9 +1,11 @@
+use std::fmt::Result;
 use std::{thread, time};
 use std::process::Command;
 use std::io::{Write, BufReader, BufRead, BufWriter};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use bincode::Config;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use crate::{tcp, slave};
@@ -58,27 +60,58 @@ pub struct Order {
 
 #[derive(Debug, Clone)]
 struct Master {
-    pub master_ip   :         String,                                                   // IP address of master
-    pub backup_ip   :         String,                                                   // IP address of backup
-    pub slaves_ip   :         [String; NUMBER_OF_ELEVATORS ],                           // Vector of slaves IP addresses
-    pub slaves_order:         [[Order; NUMBER_OF_FLOORS]; NUMBER_OF_ELEVATORS]          // Vector of slaves order queues  
+    pub config              : Config,                                                   // Config struct
+    pub master_ip           : String,                                                   // IP address of master
+    pub backup_ip           : String,                                                   // IP address of backup
+    pub slaves_ip           : [String; NUMBER_OF_ELEVATORS ],                           // Vector of slaves IP addresses
+    pub slaves_order        : [[Order; NUMBER_OF_FLOORS]; NUMBER_OF_ELEVATORS],         // Vector of slaves order queues  
+    slave_sockets           : Vec<Option<TcpStream>>,                                   // Vector of slave sockets
+    backup_socket           : TcpStream,                                                // Backup socket
 }
 
 
 impl Master {
-    pub fn init(config: Config) -> Master {
-        Self  {
-            master_ip       : config.elevator_ip_list[0],                               // IP address of master
-            backup_ip       : config.elevator_ip_list[1],                               // IP address of backup
-            slaves_ip       : config.elevator_ip_list[0..],                             // Vector of slaves IP addresses                 
+    pub fn init(
+        config              : Config,
+        master_ip           : String
+    ) -> Result<Master> {
+
+        let conf            : Config            = config.clone();
+        let backup_ip       : String            = match config.elevator_ip_list.iter().find(|&&ip| ip != master_ip) {
+                                                            Some(ip) => ip.to_string() + ":" + &config.backup_port.to_string(),
+                                                            None     => return Err("No valid backup IP found")
+                                                        };
+                                                        
+        let backup_socket   : TcpStream         = match TcpStream::connect(backup_ip) {
+                                                        Ok(socket)  => socket,
+                                                        Err(e)          => return Err("Failed to connect to backup")
+                                                    };
+
+        let mut slave_sockets: Vec<Option<TcpStream>> = config.elevator_ip_list.iter()
+                                                                    .map(|ip| {
+                                                                        match TcpStream::connect(ip.to_string() + ":" + &config.slave_port.to_string()) {
+                                                                            Ok(socket)  => Some(socket),
+                                                                            Err(_)          => None
+                                                                        }
+                                                                    })
+                                                                    .collect();
+
+        Ok(Self {
+            config          : conf,
+            master_ip       : master_ip,                               // IP address of master
+            backup_ip       : backup_ip,                              // IP address of backup
+            slaves_ip       : config.elevator_ip_list,                  // Vector of slaves IP addresses                 
             slaves_order    : [Order
                                     {
                                         hall_down   : false,
                                         hall_up     : false,
                                         cab_call    : false,    
                                     }; NUMBER_OF_ELEVATORS],
-        }
+            backup_socket   : backup_socket,
+            slave_sockets   : slave_sockets,
+        })
     }
+
     pub fn backup_task(queues: Arc<Mutex<Queues>>) {
         println!("Trying to connect to a primary at {}", ADDRESS);
         match TcpStream::connect(ADDRESS) {

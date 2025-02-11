@@ -15,10 +15,12 @@ pub enum Message{
     Error(ErrorState),
 }
 
+
+
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Message::NewOrder(id) => write!(f, "New Order:\nFloor:\t{}\nCall:\t{}", id.0, id.1),
+            Message::NewOrder(floor, button_type) => write!(f, "New Order:\nFloor:\t{}\nCall:\t{}", floor, button_type),
             Message::OrderComplete => write!(f, "Order complete."),
             Message::Error(id) => write!(f, "Error: {}", id),
         }

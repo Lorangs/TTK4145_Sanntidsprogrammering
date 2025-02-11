@@ -10,7 +10,7 @@ use std::net::TcpStream;
 use std::thread::{spawn, sleep};
 use std::time::Duration;
 
-use crate::master;
+
 use crate::{config::Config, inputs, tcp};  
 
 #[derive(Debug, Clone, Copy)]
@@ -27,8 +27,6 @@ pub enum ElevatorBehaviour {
     DoorOpen,
     OutOfOrder,
 }
-
-
 
 // TODO: Kanskje en socket tilknyttet matster må være medlemsvariabel? 
 #[derive(Debug)]
@@ -88,7 +86,7 @@ impl Slave {
     }
 
     pub fn send_new_order(&mut self, floor: u8, button_type: u8) -> Result<()> {    
-        let message = tcp::Message::NewOrder((floor, button_type));
+        let message = tcp::Message::NewOrder(floor, button_type);
         let encoded: Vec<u8> = bincode::serialize(&message).unwrap();
         match self.master_socket.write(&encoded) {
             Ok(_)           => { 
@@ -210,14 +208,15 @@ impl Slave {
 
                 // Receive incoming message from master
                 recv(self.channels.master_message_rx) -> msg => {
-                    match msg.unwrap() {
-                        tcp::Message::NewOrder(order) => {
-                            self.nxt_order = order.0;
-                            println!("[SLAVE]\tReceived new order: {:#?}", order);
-                        }
-                        tcp::Message::OrderComplete => {}   // Do nothing for order complete message
-                        tcp::Message::Error(_) => { println!("[SLAVE]\tReceived error message from master"); }
-                        _ => {}
+                    let message = msg.unwrap();
+                    match message {
+                        tcp::Message::NewOrder(floor, _button_type) => {
+                            self.nxt_order = floor;
+                            println!("[SLAVE]\tReceived new order: {:#?}", floor);
+                        },
+                        tcp::Message::OrderComplete => {},   // Do nothing for order complete message
+                        tcp::Message::Error(_) => { println!("[SLAVE]\tReceived error message from master"); },
+                        _ => {},
                     }
                 }
             }

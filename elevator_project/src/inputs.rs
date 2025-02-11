@@ -95,3 +95,77 @@ impl fmt::Display for SlaveChannels {
         )
     }
 }
+
+
+
+#[derive(Debug, Clone)]
+pub struct MasterChannels {
+    pub slave_vector_rx    : Vec<cbc::Receiver<tcp::Message>>,
+    pub backup_rx          : cbc::Receiver<tcp::Message>,
+}
+
+pub fn spawn_threads_for_master_inputs(slave_sockets: &Vec<TcpStream>, backup_socket: &TcpStream, input_poll_rate_ms: u64) -> MasterChannels {
+    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);  
+
+    // slave_vec_rx is a vector of receivers, one for each slave
+    let mut slave_vec_rx: Vec<cbc::Receiver<tcp::Message>> = Vec::new();
+
+    // loop over all slaves and spawn a new thread for each slave socket
+    for (index, socket) in slave_sockets.iter().enumerate() {
+
+        let (slave_message_tx, slave_message_rx) = cbc::unbounded::<tcp::Message>();
+        let mut socket_clone = socket.try_clone().expect("Failed to clone socket");
+        spawn(move || {
+            let mut encoded = [0; 1024];        // bit array to store the encoded message
+            loop{
+                // read from the socket into the encoded array
+                match socket_clone.read(&mut encoded) {
+                    Ok(size) => {
+                        if size > 0 {
+                            let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                            println!("[MASTER]\tReceived message from slave {}: {:#?}", index, message);
+                            slave_message_tx.send(message).unwrap();
+                        }
+                    }
+                    Err(e) => {
+                        println!("[MASTER]\tFailed to read from stream: {}", e);
+                        continue;               // TODO: Sjekk om dette er riktig
+                        // return e;
+                    }
+                }            
+                sleep(poll_period);
+            }
+        });
+        slave_vec_rx.push(slave_message_rx);
+    }
+
+
+    // spawn a new thread for the backup socket
+    let mut backup_socket_clone = backup_socket.try_clone().expect("Failed to clone socket");
+    let (backup_tx, backup_rx) = cbc::unbounded::<tcp::Message>();
+    spawn(move || {
+        let mut encoded = [0; 1024];
+        loop{
+            match backup_socket_clone.read(&mut encoded) {
+                Ok(size) => {
+                    if size > 0 {
+                        let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                        println!("[MASTER]\tReceived message from backup: {:#?}", message);
+                        backup_tx.send(message).unwrap();
+                    }
+                }
+                Err(e) => {
+                    println!("[MASTER]\tFailed to read from stream: {}", e);
+                    continue;               // TODO: Sjekk om dette er riktig
+                    // return e;
+                }
+            }            
+            sleep(poll_period);
+        }
+    });
+
+    MasterChannels {
+        slave_vector_rx : slave_vec_rx,
+        backup_rx       : backup_rx,
+    }
+}
