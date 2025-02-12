@@ -5,7 +5,7 @@ use std::path::Path;
 use std::io::BufReader; 
 use std::io::Error;
 use std::result::Result; 
-use std::fmt;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
@@ -20,9 +20,18 @@ pub struct Config {
     pub tcp_timeout_ms          : u64,
 }
 
-impl fmt::Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"Elevator IP list:\t\t{:?}\nMaster port:\t\t\t{}\nBackup port:\t\t\t{}\nSlave port:\t\t\t{}\nNumber of floors:\t\t{}\nNumber of elevators:\t\t{}\nDoor open duration [s]:\t\t{}\nInput poll rate [ms]:\t\t{}",
+impl Display for Config {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(
+            f,
+            "Elevator IP list:\t\t{:?}\n\
+            Master port:\t\t\t{}\n\
+            Backup port:\t\t\t{}\n\
+            Slave port:\t\t\t{}\n\
+            Number of floors:\t\t{}\n\
+            Number of elevators:\t\t{}\n\
+            Door open duration [s]:\t\t{}\n\
+            Input poll rate [ms]:\t\t{}",
             self.elevator_ip_list, 
             self.master_port, 
             self.backup_port, 
@@ -46,7 +55,7 @@ impl Config {
         let reader = BufReader::new(file);
         let config: Config = serde_json::from_reader(reader)?;
         
-        println!("[CONFIG]\tConfig loaded successfully:\n\n{}", config);
+        println!("[CONFIG]\tConfig loaded successfully:\n{}", config);
         return Ok(config);
     }
 }    

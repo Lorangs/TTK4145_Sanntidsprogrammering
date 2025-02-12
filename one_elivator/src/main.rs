@@ -8,6 +8,7 @@ use std::time::Duration;
 use driver_rust::elevio::elev as e;
 
 fn main(){
+
     
     let mut slave = Slave::init("localhost:15657".to_string()).unwrap();
     println!("Slave initialized");
@@ -17,23 +18,33 @@ fn main(){
     
     let (timer_tx, timer_rx) = cbc::unbounded::<bool>();
     println!("Timer initialized");
-    
+
+
+
     // går til neders etasje ved initialisering
+    // slave.behaviour = ElevatorBehaviour::Moving;
+    // slave.direction = Dirn::Down;
+    // slave.elevator.motor_direction(e::DIRN_DOWN);
+    slave.sync_lights();
+    slave.elevator.door_light(false);
+
     slave.behaviour = ElevatorBehaviour::Moving;
     slave.direction = Dirn::Down;
     slave.elevator.motor_direction(e::DIRN_DOWN);
-    slave.sync_lights();
-    slave.elevator.door_light(false);
+    
+    
     loop {
+        
         cbc::select! {
             recv(channels.floor_sensor_rx) -> msg => {
                 let floor_sensor = msg.unwrap();
                 println!("Received floor sensor message: {:#?}", floor_sensor);
                 slave.floor = floor_sensor as usize;
-                if slave.floor == 0 {
+                if slave.floor !=usize::MAX{
                     slave.elevator.motor_direction(e::DIRN_STOP);
                     slave.direction = Dirn::Stop;
                     slave.behaviour = ElevatorBehaviour::Idle;
+                    slave.elevator.floor_indicator(slave.floor as u8);
                     break;
                 }
             }
@@ -73,7 +84,8 @@ fn main(){
             slave.floor = floor_sensor as usize;
 
             match slave.behaviour {
-                ElevatorBehaviour::Moving => {
+                ElevatorBehaviour::Moving => { slave.floor = floor_sensor as usize;
+                    slave.elevator.floor_indicator(slave.floor as u8);
                     if slave.should_stop() {
                         println!("Stopping at floor {:?}", slave.floor);
                         slave.behaviour = ElevatorBehaviour::DoorOpen;
@@ -121,3 +133,6 @@ fn main(){
 }
 
 
+
+
+//Notater: Lamper fungerer ikke. Opp og ned lampe slukkes samtidig (Skal bare være en om gangen)
