@@ -14,12 +14,6 @@ pub enum Dirn {
     Up = 1
 }
 
-// behøver ikke denne lenger
-/* #[derive(Debug, Clone, Copy)]
-pub enum ClearOrderVariant{
-    CvAll,
-    CvInDirn,
-} */
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ElevatorBehaviour {
@@ -30,13 +24,13 @@ pub enum ElevatorBehaviour {
 }
 
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct Order {
     pub hall_down   : bool,
     pub hall_up     : bool,
     pub cab_call    : bool,
 }
+
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -57,6 +51,7 @@ pub struct Slave {
     pub config          : Config,
     pub obstruction     : bool,
 }
+
 
 impl Slave {
     pub fn init(addr: String) -> Result<Slave> {
@@ -149,6 +144,8 @@ impl Slave {
 
     pub fn clear_at_current_floor(&mut self) {
         self.orders[self.floor].cab_call    = false;
+
+
         self.orders[self.floor].hall_down   = false;
         self.orders[self.floor].hall_up     = false;
     }
