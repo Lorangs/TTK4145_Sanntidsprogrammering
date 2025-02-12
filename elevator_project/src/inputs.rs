@@ -107,8 +107,7 @@ pub struct MasterChannels {
 
 
 // TODO: Implement this function and rename 
-pub fn handle_master_clients(stream: TcpStream, input_poll_rate_ms: u64) -> cbc::Receiver<tcp::Message> {
-    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
+pub fn handle_master_connections(stream: &mut TcpStream, input_poll_rate_ms: u64) -> cbc::Receiver<tcp::Message> {
     let (master_tx, master_rx) = cbc::unbounded::<tcp::Message>();
     spawn(move || {
         let mut encoded = [0; 1024];
@@ -122,16 +121,18 @@ pub fn handle_master_clients(stream: TcpStream, input_poll_rate_ms: u64) -> cbc:
                     }
                 }
                 Err(e) => {
-                    println!("[MASTER]\tFailed to read from stream: {}", e);
+                    println!("[MASTER]\tFailed to read from tcp-stream: {}", e);
                     continue;               // TODO: Sjekk om dette er riktig
                     // return e;
                 }
             }            
+            let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
             sleep(poll_period);
         }
     });
     master_rx
 }
+
 
 pub fn spawn_threads_for_master_inputs(, input_poll_rate_ms: u64) -> MasterChannels {
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);  
@@ -205,4 +206,6 @@ pub fn spawn_threads_for_master_inputs(slave_sockets: &Vec<TcpStream>, backup_so
         slave_vector_rx : slave_vec_rx,
         backup_rx       : backup_rx,
     }
-} */
+} 
+
+*/

@@ -1,18 +1,10 @@
 use std::thread::{spawn, sleep};
-use std::process::Command;
 use std::io::{Write, BufReader, BufRead, BufWriter};
 use std::net::{TcpListener, TcpStream};
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
-use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
-
 use serde::{Serialize, Deserialize};
-
-use crate::{tcp, slave, config, inputs};
-
-use driver_rust::elevio::poll::CallButton;
-
-const ADDRESS: &str = "127.0.0.1:4000";
+use crate::{tcp, config, inputs};
 
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -87,17 +79,11 @@ impl Master {
                                                             Some(ip) => ip.to_string() + ":" + &config.backup_port.to_string(),
                                                             None     => return Err("No valid backup IP found".to_string())
                                                         };
-                                                        
-                                                        // Create listener socket for incoming slave connections. Listen on all interfaces.
-        let slave_listener  : TcpListener       = match TcpListener::bind("0.0.0.0".to_string() + ":" + &config.slave_port.to_string()) {
-                                                            Ok(listener) => listener,
-                                                            Err(_)      => return Err("Failed to bind listener".to_string())
-                                                        };
 
-        let backup_listener : TcpListener       = match TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string()) {
-                                                            Ok(listener) => listener,
-                                                            Err(_)      => return Err("Failed to bind listener".to_string())
-                                                        };
+
+
+        
+        
         
         spawn(move || {
             loop {
@@ -106,6 +92,22 @@ impl Master {
                         Ok(stream) => {
                             println!("Ny slave-tilkobling: {}", stream.peer_addr().unwrap());
                             inputs::handle_master_clients(stream, config.input_poll_rate_ms);
+                            
+                        }
+                        Err(_) => { println!("Failed to connect to slave"); }
+                    }
+                }
+                sleep(std::time::Duration::from_millis(config.input_poll_rate_ms));
+            }
+        });
+
+        spawn(move || {
+            loop {
+                for mut stream in backup_listener.incoming() {
+                    match stream {
+                        Ok(stream) => {
+                            println!("Ny slave-tilkobling: {}", stream.peer_addr().unwrap());
+                            inputs::handle_master_connections(&stream, config.input_poll_rate_ms);
                             
                         }
                         Err(_) => { println!("Failed to connect to slave"); }
@@ -148,8 +150,6 @@ impl Master {
         sock.write(&encoded).unwrap();
     }
 
-    fn 
-
     fn master_loop(&mut self) {
         loop {
             cbc::select! {
@@ -165,11 +165,28 @@ impl Master {
                             }
                         }
                         Err(_) => {}
-                    }
+                    }en potensielle problemer som kan påvirke dens funksjonalitet:
                 }
             }
         }
     } 
+
+    fn connect_to_clients(&self) {
+        // Bør test om listner.incomig må kjøres i loop for å motta nye tilkoblinger. 
+                                                        
+        // Create listener socket for incoming slave connections. Listen on all interfaces.
+        let slave_listener  : TcpListener       = match TcpListener::bind("0.0.0.0".to_string() + ":" + &config.slave_port.to_string()) {
+            Ok(listener) => listener,
+            Err(_)      => return Err("Failed to bind listener".to_string())
+        };
+
+        let backup_listener : TcpListener       = match TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string()) {
+                                                            Ok(listener) => listener,
+                                                            Err(_)      => return Err("Failed to bind listener".to_string())
+                                                        };
+
+    }
+
 
 }
 
