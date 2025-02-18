@@ -1,0 +1,10 @@
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/elevator_project/target/debug/deps/libhumantime-4077790961ce8912.rmeta: /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/lib.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/duration.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/wrapper.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/date.rs
+
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/elevator_project/target/debug/deps/libhumantime-4077790961ce8912.rlib: /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/lib.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/duration.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/wrapper.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/date.rs
+
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/elevator_project/target/debug/deps/humantime-4077790961ce8912.d: /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/lib.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/duration.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/wrapper.rs /home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/date.rs
+
+/home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/lib.rs:
+/home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/duration.rs:
+/home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/wrapper.rs:
+/home/lorang/.cargo/registry/src/index.crates.io-6f17d22bba15001f/humantime-2.1.0/src/date.rs:

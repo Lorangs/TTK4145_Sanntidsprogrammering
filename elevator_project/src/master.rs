@@ -1,11 +1,10 @@
-use std::thread::{spawn, sleep};
+use std::thread::{spawn, sleep, Builder};
 use std::io::{Write, BufReader, BufRead, BufWriter};
 use std::net::{Incoming, TcpListener, TcpStream};
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::collections::VecDeque;
 use serde::{Serialize, Deserialize};
 use std::string::String;
-use crate::inputs::listen_for_new_connection;
 use crate::{config, inputs, slave, tcp};
 
 use crossbeam_channel as cbc;
@@ -71,7 +70,7 @@ pub struct Master {
     order_queues            : MasterQueues,                                             // Vector of slaves order queues
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                               // Incoming connections
     slave_sockets           : Vec<Option<TcpStream>>,                                 // Vector of slave sockets
-    slave_channels          : Vec<Option<cbc::Receiver<tcp::Message>>>,                              // Vector of slave channels
+    slave_channels          : Vec<cbc::Receiver<tcp::Message>>,                              // Vector of slave channels
     //backup_socket           : TcpStream,                                              // Backup socket
     //slaves_rx               : Vec<cbc::Receiver<tcp::Message>>,                 // Vector of slaves message receivers
 }
@@ -103,6 +102,10 @@ impl Master {
         // Create channel for incoming connections                                                                                                  
         let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
 
+        let mut slave_channels : Vec<cbc::Receiver<tcp::Message>> = Vec::new();
+        
+
+
         let master = Master {
             config                  : config.clone(),
             backup_ip               : backup_ip,                              // IP address of backup
@@ -110,20 +113,19 @@ impl Master {
             order_queues            : MasterQueues::init(),                   // Vector of slaves order queues
             incoming_clients_rx     : incoming_conn_rx,                       // Incoming connections
             slave_sockets           : vec![ None, None, None ],               // Vector of slave sockets  TODO: Fix size
-            slave_channels          : vec![],                                   // Vector of slave channels TODO: Fix size
+            slave_channels          : slave_channels,                                   // Vector of slave channels TODO: Fix size
             //backup_socket           : backup_socket,                          // Backup socket
         }; 
 
+        
+
         // Thread for listening for new slave connections
         let slave_port = config.slave_port.to_string();
-        spawn(move || {
-            // skal det være loop her eller ikke?? må testes
-            loop {
-                let incoming_tcp_slave = inputs::listen_for_new_connection(&slave_port, conf.tcp_timeout_ms).unwrap();
-                incoming_conn_tx.send(incoming_tcp_slave).unwrap();
-                sleep(std::time::Duration::from_millis(conf.input_poll_rate_ms));
-            }
-        });
+        Builder::new().name("Incomig Connections".to_string()).spawn(move || {
+            // skal det være loop her eller ikke?? må teste
+            let incoming_tcp_slave = inputs::listen_for_new_connection(&slave_port).unwrap();
+            incoming_conn_tx.send(incoming_tcp_slave).unwrap();        
+        }).unwrap();
 
         Ok(master)
     
@@ -146,7 +148,7 @@ impl Master {
     }
 
     // Implementer samme funksjonalitet for backup. Enten i samme func eller separat (duplisert kode :())
-
+    
     pub fn master_loop(&mut self) {
         loop {
             cbc::select! {
@@ -155,7 +157,11 @@ impl Master {
                     // Ved ny tilkobling. Legg til i listen kun hvis det er ledig plass
                     match stream {
                         Ok(stream) => {
-                            for slave_socket in self.slave_sockets.iter_mut() {
+                            let stream_clone = stream.try_clone().expect("Failed to clone stream");
+                            let slave_rx = inputs::master_read_from_clients(stream_clone, self.config.input_poll_rate_ms);
+                            self.slave_channels.push(Some(slave_rx));
+                        },
+                        Err(_) => {}   elevator_project/config.jsonson
                                 if slave_socket.is_none() {
                                  
                                     // Start ny tråd for å lese fra slave
@@ -164,16 +170,16 @@ impl Master {
                                     self.slave_channels.push(Some(slave_rx));
 
                                     *slave_socket = Some(stream);
-                                    break;
+                                    breakelevator_project/config.json;
                                 }
                             }
                         }
                         Err(_) => {}   
                     }
-                }
-
+                    */
+                    }
                 
-                recv(self.slave_channels[0].as_ref().unwrap()) -> msg => {
+                recv(self.slave_channels.last()) -> msg => {
                     match msg {
                         Ok(message) => {
                             match message {

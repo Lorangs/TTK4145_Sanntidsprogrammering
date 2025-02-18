@@ -1,16 +1,13 @@
 mod config;
-mod test;
-mod slave;
 mod master;
-mod tcp;
+mod slave;
 mod inputs;
+mod tcp;
 
-use std::thread::spawn;
+use crate::master::Master;
+use crate::config::Config;
 use std::path::Path;
-use driver_rust::elevio;
-use driver_rust::elevio::elev as e;
-
-
+use std::thread::spawn;
 
 fn main() {
     let config = config::Config::config(Path::new("config.json")).unwrap();
@@ -19,17 +16,10 @@ fn main() {
     let slave_ip    = config.elevator_ip_list[0].to_string() + ":" + &config.slave_port.to_string();
 
 
+    let mut master = master::Master::init(&config, &master_ip).unwrap();
+    print!("Master initialized\n");
 
-
-    let mut slave = slave::Slave::init(slave_ip, &config);
-    print!("Slave initialized\n");
-
-
-
-    spawn(move || {
-        slave.slave_loop();
-    });
+    master.master_loop();
       
     
-
 }
