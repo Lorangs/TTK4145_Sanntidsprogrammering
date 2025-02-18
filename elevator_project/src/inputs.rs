@@ -97,6 +97,8 @@ impl fmt::Display for SlaveChannels {
 }
 
 
+/******************************************************************************************************************* */
+
 
 #[derive(Debug, Clone)]
 pub struct MasterChannels {
@@ -109,12 +111,13 @@ pub struct MasterChannels {
 
 // se på returntype av denne funksjonen
 // Bør test om listner.incomig må kjøres i loop for å motta nye tilkoblinger. 
-pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
+pub fn listen_for_new_connection(port: &String, tcp_timeout: u64) -> Option<TcpStream> {
     let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
+                //stream.set_read_timeout(Some(Duration::from_secs(tcp_timeout))).expect("Failed to set read timeout");
                 return Some(stream);
             }
             Err(e) => {
@@ -128,14 +131,14 @@ pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
     
 
 // TODO: Implement this function and rename 
-pub fn master_read_from_clients(stream: &mut TcpStream, input_poll_rate_ms: u64) -> cbc::Receiver<tcp::Message> {
+pub fn master_read_from_clients(mut stream: TcpStream, input_poll_rate_ms: u64) -> cbc::Receiver<tcp::Message> {
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
-    let mut stream_clone = stream.try_clone().expect("Failed to clone stream");
+    
     let (tx, rx) = cbc::unbounded::<tcp::Message>();
     spawn( move || {
         let mut encoded = [0; 1024];
         loop{
-            match stream_clone.read(&mut encoded) {
+            match stream.read(&mut encoded) {
                 Ok(size) => {
                     if size > 0 {
                         let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");

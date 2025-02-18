@@ -5,6 +5,7 @@ mod master;
 mod tcp;
 mod inputs;
 
+use std::thread::spawn;
 use std::path::Path;
 use driver_rust::elevio;
 use driver_rust::elevio::elev as e;
@@ -19,8 +20,16 @@ fn main() {
 
 
 
-    let slave = slave::Slave::init(slave_ip, master_ip, config);
-    
+
+    let mut slave = slave::Slave::init(slave_ip, &config);
+    print!("Slave initialized\n");
+
+
+
+    spawn(move || {
+        slave.slave_loop();
+    });
+      
     
 
 }

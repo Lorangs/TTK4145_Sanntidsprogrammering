@@ -6,7 +6,7 @@ use bincode;
 
 use std::io::{Write, prelude, Result};
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::net::TcpStream;
+use std::net::{TcpStream, SocketAddr, IpAddr, Ipv4Addr};
 use std::thread::{spawn, sleep};
 use std::time::Duration;
 
@@ -33,7 +33,6 @@ pub enum ElevatorBehaviour {
 pub struct Slave {
     pub config                          : Config,
     pub elevator                        : e::Elevator,
-    master_ip                           : String,
     nxt_order                           : u8,
     floor                               : u8,
     obstruction                         : bool,
@@ -48,18 +47,27 @@ pub struct Slave {
 impl Slave {
     pub fn init(
             slave_addr          : String,     
-            master_ip           : String,
-            config              : Config
+            //master_ip           : &String,
+            config              : &Config
         ) -> Slave
     {
         let conf                : Config                = config.clone();
         let elev                : e::Elevator           = e::Elevator::init(&slave_addr, config.number_of_floors).expect("Failed to initialize elevator");
-        let master_sckt         : TcpStream             = TcpStream::connect(master_ip.clone()).expect("Failed to connect to master");
+        let master_socket_addr  : SocketAddr            = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(
+                                                            config.elevator_ip_list[0].split_off(3) as u8,
+                                                            config.elevator_ip_list[0].split_off(3) as u8,
+                                                            config.elevator_ip_list[0].split_off(3) as u8,
+                                                            config.elevator_ip_list[0].split_off(3) as u8)), 
+                                                            config.master_port));
+        let master_sckt         : TcpStream             = TcpStream::connect_timeout
+                                                                            (
+                                                                                &master_socket_addr,
+                                                                                Duration::from_millis(config.tcp_timeout_ms)
+                                                                            ).expect("Failed to connect to master");
         let chs                 : inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms.clone(), &master_sckt);
         let slave = Self {
             config              : conf,
             elevator            : elev,     
-            master_ip           : master_ip,
             nxt_order           : 0,
             obstruction         : false,
             floor               : 0,
@@ -228,7 +236,6 @@ impl Display for Slave {
         write!(
             f, 
             "\tElevator:\t{:#?}\n\
-            \tMaster_ip:\t{:#?}\n\
             \tNxt_order:\t{:#?}\n\
             \tObstruction:\t{:#?}\n\
             \tFloor:\t\t{:#?}\n\
@@ -239,7 +246,7 @@ impl Display for Slave {
             \tDoor_timer:\t{:#?}",
             
             self.elevator,
-            self.master_ip,
+            //self.master_ip,
             self.nxt_order,
             self.obstruction,
             self.floor,
