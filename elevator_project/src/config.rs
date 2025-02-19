@@ -7,6 +7,7 @@ use std::io::Error;
 use std::result::Result; 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
     pub elevator_ip_list        : Vec<String>,

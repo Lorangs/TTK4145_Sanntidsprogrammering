@@ -1,18 +1,18 @@
 #![allow(warnings)]
 
 use std::thread::{spawn, sleep, Builder};
-use std::io::{Write, BufReader, BufRead, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::{Incoming, TcpListener, TcpStream};
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::collections::VecDeque;
 use serde::{Serialize, Deserialize};
 use std::string::String;
+use crossbeam_channel as cbc;
+
 use crate::config::Config;
-use crate::inputs;
+use crate::inputs::{self, listen_for_new_connection};
 use crate::slave;
 use crate::tcp;
-
-use crossbeam_channel as cbc;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Order {
@@ -107,7 +107,7 @@ impl Master {
         
 
 
-        let master = Master {
+        let mut master = Master {
             config                  : config.clone(),
             backup_ip               : backup_ip,                              // IP address of backup
             slaves_ip               : config.elevator_ip_list.clone(),                // Vector of slaves IP addresses                 
@@ -121,12 +121,32 @@ impl Master {
         
 
         // Thread for listening for new slave connections
+    
         let slave_port = config.slave_port.to_string();
-        Builder::new().name("Incomig Connections".to_string()).spawn(move || {
-            // skal det være loop her eller ikke?? må teste
-            let incoming_tcp_slave = inputs::listen_for_new_connection(&slave_port).unwrap();
-            incoming_conn_tx.send(incoming_tcp_slave).unwrap();        
-        }).unwrap();
+
+        spawn (move || {
+            let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + slave_port.as_str()).expect("Failed to bind");
+            
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        println!("[MASTER]\tNew slave connection established: {}", stream.peer_addr().unwrap());
+                        spawn(|| handle_slave_connection(stream));
+                    }
+                    Err(e) => {
+                        eprintln!("[MASTER]\tFailed to establish connection to slave: {}", e);
+                    }
+                }
+            }
+        });
+
+        
+        // Builder::new().name("Incomig Connections".to_string()).spawn(move || {
+        //     // skal det være loop her eller ikke?? må teste
+        //     let incoming_tcp_slave: TcpStream = inputs::listen_for_new_connection(&slave_port).unwrap();
+        //     master.slave_sockets[0] = Some(incoming_tcp_slave.try_clone().unwrap());
+        //     //incoming_conn_tx.send(incoming_tcp_slave).unwrap();        
+        // }).unwrap();
 
         Ok(master)
     
@@ -134,7 +154,7 @@ impl Master {
 
 
     // Vurdere å flytte til inputs eller inne i handle_clients. Problem: Lese fra kø fra annen tråd. 
-    fn send_order_to_slave(&self, mut slave_socket: TcpStream, nxt_order: u8) {
+    fn send_order_to_slave(&self, mut slave_socket: &TcpStream, nxt_order: u8) {
         let message = tcp::Message::NewOrder(nxt_order, 0); 
         let encoded = bincode::serialize(&message).unwrap();
         match slave_socket.write(&encoded) {
@@ -151,16 +171,45 @@ impl Master {
     // Implementer samme funksjonalitet for backup. Enten i samme func eller separat (duplisert kode :())
     
     pub fn master_loop(&mut self) {
+        sleep(std::time::Duration::from_secs(3));
+        if let Some(ref slave_socket) = self.slave_sockets[0] {
+            self.send_order_to_slave(slave_socket, 1);
+        } else {
+            println!("[MASTER]\tNo slave socket available at index 0");
+        }        
         let mut i=0;
         loop{
             println!("Master loop");
-            sleep(std::time::Duration::from_secs(1));
+            sleep(std::time::Duration::from_secs(3));
             i+=1;
             if i==5 {
                 break;
             }
         }
     }
+}
 
 
+
+
+
+// Implementer funksjon for å håndtere meldinger fra slave
+fn handle_slave_connection(mut stream: TcpStream) {
+    let mut buffer = [0; 1024];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(size) => {
+                if size > 0 {
+                    let recieved: tcp::Message = bincode::deserialize(&buffer[..size]).expect("Failed to deserialize message from slave");
+                    println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
+                }
+
+                //Implement message handling here
+            }
+            Err(e) => {
+                eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e)     
+                // Handle error here  
+            }
+        }
+    }
 }

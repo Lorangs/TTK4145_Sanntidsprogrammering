@@ -52,7 +52,7 @@ impl MasterQueues {
     }
 
     pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
-        if self.cab_queues.len() > slave_num as usize {
+        if self.cab_queues.leelevator_project/config.json() > slave_num as usize {
             self.cab_queues[slave_num as usize].push_back(floor);
         } else {
             println!("Error: Slave queue index {} is out of bounds!", slave_num);

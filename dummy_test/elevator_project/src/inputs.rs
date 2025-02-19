@@ -116,26 +116,21 @@ pub struct MasterChannels {
 // se på returntype av denne funksjonen
 // Bør test om listner.incomig må kjøres i loop for å motta nye tilkoblinger. 
 pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
-    //let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
-    let listener  = TcpListener::bind("127.0.0.1:4000").expect("Failed to bind");
+    let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
+    //let listener  = TcpListener::bind("0.0.0.0:4000").expect("Failed to bind");
     println!("Listening for new connection\n");
-    loop{
-        if let Ok((stream,_))=listener.accept(){
-            println!("Slave connected");
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                //stream.set_read_timeout(Some(Duration::from_secs(tcp_timeout))).expect("Failed to set read timeout");
+                return Some(stream);
+            }
+            Err(e) => {
+                println!("[MASTER]\tFailed to establish connection: {}", e);
+                return None;
+            }
         }
     }
-    // for stream in listener.incoming() {
-    //     match stream {
-    //         Ok(stream) => {
-    //             //stream.set_read_timeout(Some(Duration::from_secs(tcp_timeout))).expect("Failed to set read timeout");
-    //             return Some(stream);
-    //         }
-    //         Err(e) => {
-    //             println!("[MASTER]\tFailed to establish connection: {}", e);
-    //             return None;
-    //         }
-    //     }
-    // }
     None       
 }
     
