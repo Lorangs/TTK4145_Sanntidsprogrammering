@@ -5,14 +5,16 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::{Incoming, TcpListener, TcpStream};
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::collections::VecDeque;
-use serde::{Serialize, Deserialize};
 use std::string::String;
+use std::sync::{Arc, Mutex};
+
+use serde::{Serialize, Deserialize};
 use crossbeam_channel as cbc;
 
 use crate::config::Config;
 use crate::inputs::{self, listen_for_new_connection};
 use crate::slave;
-use crate::tcp;
+use crate::tcp::{self, Message};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Order {
@@ -26,18 +28,6 @@ pub struct Order {
 pub struct MasterQueues {
     pub hall_queue: VecDeque<(u8, u8)>,     // (floor, button_type) for external hall calls.
     pub cab_queues: Vec<VecDeque<u8>>,      // Vector of slave queues for internal cab calls.  ref driver_rust::elevio::poll::CallButton
-}
-
-
-impl FmtDisplay for MasterQueues {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f, 
-            "Hall queue: {:?}\n\
-            Cab queues: {:?}", 
-            self.hall_queue, 
-            self.cab_queues)
-    }
 }
 
 
@@ -62,20 +52,29 @@ impl MasterQueues {
 }
 
 
+impl FmtDisplay for MasterQueues {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(
+            f, 
+            "Hall queue: {:?}\n\
+            Cab queues: {:?}", 
+            self.hall_queue, 
+            self.cab_queues)
+    }
+}
+
+
 // Master implementation
 #[derive(Debug)]
 pub struct Master {
-    pub config              : Config,                                           // Config struct                                 
+    pub config              : Config,                                                   // Config struct                                 
     slaves_ip               : Vec<String>,                                              // Vector of slaves IP addresses
     backup_ip               : String,                                                   // IP address of backup
     order_queues            : MasterQueues,                                             // Vector of slaves order queues
-    incoming_clients_rx     : cbc::Receiver<TcpStream>,                                               // Incoming connections
-    slave_sockets           : Vec<Option<TcpStream>>,                                 // Vector of slave sockets
-    slave_channels          : Vec<cbc::Receiver<tcp::Message>>,                              // Vector of slave channels
+    incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
+    slave_channels          : Arc<Mutex<Vec<(cbc::Receiver<Message>, cbc::Sender<Message>)>>>,      // Vector of slave channels. Sygt som fy
     //backup_socket           : TcpStream,                                              // Backup socket
-    //slaves_rx               : Vec<cbc::Receiver<tcp::Message>>,                 // Vector of slaves message receivers
 }
-
 
 impl Master {
     pub fn init(
@@ -102,20 +101,16 @@ impl Master {
 
         // Create channel for incoming connections                                                                                                  
         let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
+        let mut slave_channels : Arc<Mutex<Vec<(cbc::Receiver<Message>, cbc::Sender<Message>)>>> = Arc::new(Mutex::new(Vec::new()));
 
-        let mut slave_channels : Vec<cbc::Receiver<tcp::Message>> = Vec::new();
-        
-
-
-        let mut master = Master {
+        let master = Master {
             config                  : config.clone(),
-            backup_ip               : backup_ip,                              // IP address of backup
-            slaves_ip               : config.elevator_ip_list.clone(),                // Vector of slaves IP addresses                 
-            order_queues            : MasterQueues::init(),                   // Vector of slaves order queues
-            incoming_clients_rx     : incoming_conn_rx,                       // Incoming connections
-            slave_sockets           : vec![ None, None, None ],               // Vector of slave sockets  TODO: Fix size
-            slave_channels          : slave_channels,                                   // Vector of slave channels TODO: Fix size
-            //backup_socket           : backup_socket,                          // Backup socket
+            backup_ip               : backup_ip,                              
+            slaves_ip               : config.elevator_ip_list.clone(),                         
+            order_queues            : MasterQueues::init(),                   
+            incoming_clients_rx     : incoming_conn_rx,                       
+            slave_channels          : slave_channels,                                   
+            //backup_socket           : backup_socket,                          
         }; 
 
         
@@ -124,19 +119,28 @@ impl Master {
     
         let slave_port = config.slave_port.to_string();
 
+        
+        let slave_channels_clone = Arc::clone(&master.slave_channels);
         spawn (move || {
             let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + slave_port.as_str()).expect("Failed to bind");
             
             for stream in listener.incoming() {
+                let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
+                let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
+                let mut locked_channel = slave_channels_clone.lock().unwrap();
+                locked_channel.push((slave_to_master_rx, master_to_slave_tx));
+                drop(locked_channel);
+                
                 match stream {
                     Ok(stream) => {
                         println!("[MASTER]\tNew slave connection established: {}", stream.peer_addr().unwrap());
-                        spawn(|| handle_slave_connection(stream));
+                        spawn(|| handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx));
                     }
                     Err(e) => {
                         eprintln!("[MASTER]\tFailed to establish connection to slave: {}", e);
                     }
                 }
+
             }
         });
 
@@ -154,39 +158,22 @@ impl Master {
 
 
     // Vurdere å flytte til inputs eller inne i handle_clients. Problem: Lese fra kø fra annen tråd. 
-    fn send_order_to_slave(&self, mut slave_socket: &TcpStream, nxt_order: u8) {
-        let message = tcp::Message::NewOrder(nxt_order, 0); 
-        let encoded = bincode::serialize(&message).unwrap();
-        match slave_socket.write(&encoded) {
-            Ok(_) => {
-                println!("[MASTER]\tOrder sent to slave:\t{}", slave_socket.peer_addr().unwrap());
-            }
-            Err(e) => {
-                println!("[MASTER]\tFailed to send order to slave:\t{}", e);
-            }
-        }
-        
+    fn send_order_to_slave(&self, nxt_order: u8, slave_number: u8) {
+        let message = Message::NewOrder(nxt_order, 0); 
+        let mut locked_channels = self.slave_channels.lock().unwrap();
+        locked_channels[slave_number as usize].1.send(message).unwrap(); // Skriv om for bedre lesbarehet enn 0 og 1    
     }
 
     // Implementer samme funksjonalitet for backup. Enten i samme func eller separat (duplisert kode :())
     
     pub fn master_loop(&mut self) {
-        sleep(std::time::Duration::from_secs(3));
-        if let Some(ref slave_socket) = self.slave_sockets[0] {
-            self.send_order_to_slave(slave_socket, 1);
-        } else {
-            println!("[MASTER]\tNo slave socket available at index 0");
-        }        
-        let mut i=0;
-        loop{
-            println!("Master loop");
-            sleep(std::time::Duration::from_secs(3));
-            i+=1;
-            if i==5 {
-                break;
-            }
+        for i in 0..10 {
+            println!("[MASTER]\tMaster loop iteration: {}", i);
+            sleep(std::time::Duration::from_secs(1));
         }
+       
     }
+
 }
 
 
@@ -194,7 +181,7 @@ impl Master {
 
 
 // Implementer funksjon for å håndtere meldinger fra slave
-fn handle_slave_connection(mut stream: TcpStream) {
+fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sender<tcp::Message>, master_to_slave_rx: cbc::Receiver<tcp::Message>) {
     let mut buffer = [0; 1024];
     loop {
         match stream.read(&mut buffer) {
@@ -202,13 +189,24 @@ fn handle_slave_connection(mut stream: TcpStream) {
                 if size > 0 {
                     let recieved: tcp::Message = bincode::deserialize(&buffer[..size]).expect("Failed to deserialize message from slave");
                     println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
+                    slave_to_master_tx.send(recieved).unwrap();
                 }
 
-                //Implement message handling here
+                //Implement message handlie new, I hesitate to overwhelm you with additional information. But, you could also implement a single-threaded TCP server that does something similar using tokio - then you could replace this with Rc<RefCell<Vec<String>>, which is an analogous construct for single-threaded scenarios.ng here
             }
             Err(e) => {
                 eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e)     
                 // Handle error here  
+            }
+        }
+
+        match master_to_slave_rx.try_recv() {
+            Ok(message) => {
+                let encoded = bincode::serialize(&message).expect("Failed to serialize message to slave");
+                stream.write(&encoded).unwrap();
+            }
+            Err(_) => {
+                eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
             }
         }
     }

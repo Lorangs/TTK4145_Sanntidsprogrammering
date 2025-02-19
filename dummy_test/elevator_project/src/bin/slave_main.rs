@@ -10,7 +10,7 @@ fn main() {
     
     let config = Config::config(Path::new("config.json")).unwrap();
 
-    let slave_ip    = config.elevator_ip_list[0].to_string() + ":" + &config.slave_port.to_string();
+    let slave_ip    = config.elevator_ip_list[0].to_string() + ":" + "15657";
 
     let mut slave = Slave::init(slave_ip, &config);
     print!("Slave initialized\n");
