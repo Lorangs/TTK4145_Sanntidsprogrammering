@@ -1,14 +1,12 @@
-
-use config::Config;
-use master::Master;
+use elevator_project::{config::Config, master::Master};
 use std::path::Path;
 use std::thread::spawn;
 
 fn main() {
-    let config = config::Config::config(Path::new("config.json")).unwrap();
+    let config = Config::config(Path::new("config.json")).unwrap();
     let master_ip   = config.elevator_ip_list[0].to_string() + ":" + &config.master_port.to_string();
 
-    let mut master = master::Master::init(&config, &master_ip).unwrap();
+    let mut master = Master::init(&config, &master_ip).unwrap();
     print!("Master initialized\n");
 
     master.master_loop();

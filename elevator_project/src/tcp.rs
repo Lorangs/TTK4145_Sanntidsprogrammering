@@ -12,6 +12,7 @@ pub const CAB       : u8 = 2;
 pub enum Message{
     NewOrder(u8, u8),           // Floor, Button_type
     OrderComplete,                    
+    ConnectionTest,
     Error(ErrorState),
 }
 
@@ -22,6 +23,7 @@ impl fmt::Display for Message {
         match self {
             Message::NewOrder(floor, button_type) => write!(f, "New Order:\nFloor:\t{}\nCall:\t{}", floor, button_type),
             Message::OrderComplete => write!(f, "Order complete."),
+            Message::ConnectionTest => write!(f, "Connection test."),
             Message::Error(id) => write!(f, "Error: {}", id),
         }
     }

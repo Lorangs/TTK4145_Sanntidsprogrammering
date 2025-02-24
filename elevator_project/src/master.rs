@@ -52,7 +52,7 @@ impl MasterQueues {
     }
 
     pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
-        if self.cab_queues.leelevator_project/config.json() > slave_num as usize {
+        if self.cab_queues.len() > slave_num as usize {
             self.cab_queues[slave_num as usize].push_back(floor);
         } else {
             println!("Error: Slave queue index {} is out of bounds!", slave_num);
@@ -69,7 +69,7 @@ pub struct Master {
     backup_ip               : String,                                                   // IP address of backup
     order_queues            : MasterQueues,                                             // Vector of slaves order queues
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                               // Incoming connections
-    slave_sockets           : Vec<Option<TcpStream>>,                                 // Vector of slave sockets
+    slave_sockets           : Vec<TcpStream>,                                 // Vector of slave sockets
     slave_channels          : Vec<cbc::Receiver<tcp::Message>>,                              // Vector of slave channels
     //backup_socket           : TcpStream,                                              // Backup socket
     //slaves_rx               : Vec<cbc::Receiver<tcp::Message>>,                 // Vector of slaves message receivers
@@ -80,9 +80,8 @@ impl Master {
     pub fn init(
         config              : &config::Config,
         master_ip           : &String
-    ) -> Result<Master, String> {
-
-        let conf            : config::Config    = config.clone();
+    ) -> Result<Master, String> 
+    {
         let backup_ip       : String            = match config.elevator_ip_list.iter().find(|&ip| *ip != *master_ip) 
                                                         {
                                                             Some(ip) => ip.to_string() + ":" + &config.backup_port.to_string(),
@@ -91,44 +90,34 @@ impl Master {
       
 
 
-/* 
-        // connect to backup. Will not continue until connection is established
-        let mut backup_socket : Option<TcpStream> = None;
-        while backup_socket.is_none() {
-            backup_socket = listen_for_new_connection(&config.backup_port.to_string()) 
-        } */
-
-
         // Create channel for incoming connections                                                                                                  
-        let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
+        let (incoming_clients_tx, incoming_clients_rx) = cbc::unbounded();
 
-        let mut slave_channels : Vec<cbc::Receiver<tcp::Message>> = Vec::new();
+        let slave_sockets  : Vec<TcpStream> = Vec::new();
+        let slave_channels : Vec<cbc::Receiver<tcp::Message>> = Vec::new();
         
-
-
         let master = Master {
             config                  : config.clone(),
             backup_ip               : backup_ip,                              // IP address of backup
-            slaves_ip               : config.elevator_ip_list.clone(),                // Vector of slaves IP addresses                 
+            slaves_ip               : config.elevator_ip_list.clone(),        // Vector of slaves IP addresses                 
             order_queues            : MasterQueues::init(),                   // Vector of slaves order queues
-            incoming_clients_rx     : incoming_conn_rx,                       // Incoming connections
-            slave_sockets           : vec![ None, None, None ],               // Vector of slave sockets  TODO: Fix size
-            slave_channels          : slave_channels,                                   // Vector of slave channels TODO: Fix size
-            //backup_socket           : backup_socket,                          // Backup socket
+            incoming_clients_rx     : incoming_clients_rx,                    // Incoming connections
+            slave_sockets           : slave_sockets,               // Vector of slave sockets  TODO: Fix size
+            slave_channels          : slave_channels,                         // Vector of slave channels TODO: Fix size
+            //backup_socket           : backup_socket,                        // Backup socket
         }; 
-
-        
 
         // Thread for listening for new slave connections
         let slave_port = config.slave_port.to_string();
         Builder::new().name("Incomig Connections".to_string()).spawn(move || {
-            // skal det være loop her eller ikke?? må teste
-            let incoming_tcp_slave = inputs::listen_for_new_connection(&slave_port).unwrap();
-            incoming_conn_tx.send(incoming_tcp_slave).unwrap();        
+            match inputs::listen_for_new_connection(&slave_port) {
+                Some(stream) => {
+                    incoming_clients_tx.send(stream).unwrap();
+                },
+                None => { println!("[MASTER]\tFailed to establish connection"); }
+            };      
         }).unwrap();
-
         Ok(master)
-    
     }
 
 
@@ -142,78 +131,110 @@ impl Master {
             }
             Err(e) => {
                 println!("[MASTER]\tFailed to send order to slave:\t{}", e);
+                println!("[MASTER]\tRemoving slave from list");
+                                
+            }
+        }   
+    }
+
+
+    // Tanken er å teste konnekjsonen til slavene hvert x sekund. Fjernes dersom de ikke svarer.
+    fn test_connection_to_slaves(&mut self) {
+        let message = tcp::Message::ConnectionTest;
+        let encoded = bincode::serialize(&message).unwrap();
+        let mut indices_to_remove: Vec<usize> = Vec::new();
+
+        for (index, mut slave_socket) in self.slave_sockets.iter().enumerate() {
+            match slave_socket.write(&encoded) {
+                Ok(_) => {
+                    // println!("[MASTER]\tConnection test sent to slave:\t{}", slave_socket.peer_addr().unwrap());
+                }
+                Err(e) => {
+                    println!("[MASTER]\tFailed to send connection test to slave:\t{}", e);
+                    println!("[MASTER]\tRemoving slave from list"); 
+                    indices_to_remove.push(index);
+                }       
             }
         }
-        
+
+        // remove slaves that did not respond
+        if indices_to_remove.len() > 0 {
+            for index in indices_to_remove {
+                self.slave_sockets.remove(index);
+                self.slave_channels.remove(index);
+            }
+        }
     }
 
     // Implementer samme funksjonalitet for backup. Enten i samme func eller separat (duplisert kode :())
     
     pub fn master_loop(&mut self) {
-        loop {
-            cbc::select! {
-                // for innkommende nye tilkoblinger
-                recv(self.incoming_clients_rx) -> stream => {
-                    // Ved ny tilkobling. Legg til i listen kun hvis det er ledig plass
-                    match stream {
-                        Ok(stream) => {
-                            let stream_clone = stream.try_clone().expect("Failed to clone stream");
-                            let slave_rx = inputs::master_read_from_clients(stream_clone, self.config.input_poll_rate_ms);
-                            self.slave_channels.push(Some(slave_rx));
-                        },
-                        Err(_) => {}   elevator_project/config.jsonson
-                                if slave_socket.is_none() {
-                                 
-                                    // Start ny tråd for å lese fra slave
-                                    let stream_clone = stream.try_clone().expect("Failed to clone stream");
-                                    let slave_rx = inputs::master_read_from_clients(stream_clone, self.config.input_poll_rate_ms);
-                                    self.slave_channels.push(Some(slave_rx));
+        loop 
+        {    
+            let mut select = cbc::Select::new();
+            let mut handles: Vec<usize> = Vec::new();
+            
+            // Register the incoming clients receiver
+            handles.push(select.recv(&self.incoming_clients_rx));
+            
+            // Register the slave channels
+            for rx in &self.slave_channels 
+            {
+                handles.push(select.recv(rx));
+            }
+            
+            // Wait for any of the receivers to receive a message
+            let operator = select.select();
+            let index = operator.index();
+            match index {
+                // Handle incoming client connections
+                0 => {
+                    let stream = operator.recv(&self.incoming_clients_rx).unwrap();
+                    let stream_clone = stream.try_clone().expect("Failed to clone stream");
+                    let slave_rx = inputs::master_read_from_clients(stream_clone, self.config.input_poll_rate_ms);
+                    self.slave_channels.push(slave_rx);
+                    self.slave_sockets.push(stream);
+                    
+                }
 
-                                    *slave_socket = Some(stream);
-                                    breakelevator_project/config.json;
+                // Handle messages from slave channels
+                _ => {
+                    let message = operator.recv(&self.slave_channels[index - 1]).unwrap();  
+                    match message          
+                    {
+                        tcp::Message::NewOrder(floor, button_type) => {
+                            match button_type {
+                                driver_rust::elevio::elev::HALL_UP => {
+                                    self.order_queues.add_to_hall_queue(floor, driver_rust::elevio::elev::HALL_UP);
                                 }
+                                driver_rust::elevio::elev::HALL_DOWN => {
+                                    self.order_queues.add_to_hall_queue(floor, driver_rust::elevio::elev::HALL_DOWN);
+                                }
+                                driver_rust::elevio::elev::CAB => {
+                                    self.order_queues.add_to_cab_queue(0, floor);
+                                }
+                                _ => {}
                             }
                         }
-                        Err(_) => {}   
-                    }
-                    */
-                    }
-                
-                recv(self.slave_channels.last()) -> msg => {
-                    match msg {
-                        Ok(message) => {
-                            match message {
-                                tcp::Message::NewOrder(floor, button_type) => {
-                                    match button_type {
-                                        driver_rust::elevio::elev::HALL_UP => {
-                                            self.order_queues.add_to_hall_queue(floor, driver_rust::elevio::elev::HALL_UP);
-                                        }
-                                        driver_rust::elevio::elev::HALL_DOWN => {
-                                            self.order_queues.add_to_hall_queue(floor, driver_rust::elevio::elev::HALL_DOWN);
-                                        }
-                                        driver_rust::elevio::elev::CAB => {
-                                            self.order_queues.add_to_cab_queue(0, floor);
-                                        }
-                                        _ => {}
-                                    }
-                                }
 
-                                tcp::Message::OrderComplete => {
-                                    print!("[MASTER]\tOrder complete");
-                                    // TODO: Implementer funksjonalitet for å fjerne ferdig ordre fra kø
-                                }
-
-                                tcp::Message::Error(_) => {}    // TODO: Implementer funksjonalitet for å håndtere feil hos slave
-
-                            }
+                        tcp::Message::OrderComplete => {
+                            println!("[MASTER]\tOrder complete");
+                            // TODO: Implement functionality to handle order completion
                         }
-                        Err(_) => {}
+
+                        tcp::Message::Error(_) => {
+                            println!("[MASTER]\tReceived error message from slave");
+                            // TODO: Implement functionality to handle errors from slave
+                        }
+
+                        tcp::Message::ConnectionTest => {}
                     }
                 }
             }
         }
-    } 
+    }
 }
+
 
 
 
