@@ -48,6 +48,12 @@ impl MasterQueues {
 
     pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
         //TODO
+        self.cab_queues[slave_num as usize].push_back(floor);
+    }
+
+    pub fn get_next_order(&mut self) -> (Option<(u8, u8)>) {
+        //reryrner fra cab que vist den e tom, returner fra hall que
+        self.hall_queue.pop_front()
     }
 }
 
@@ -70,7 +76,7 @@ pub struct Master {
     pub config              : Config,                                                   // Config struct                                 
     slaves_ip               : Vec<String>,                                              // Vector of slaves IP addresses
     backup_ip               : String,                                                   // IP address of backup
-    order_queues            : MasterQueues,                                             // Vector of slaves order queues
+    pub order_queues            : MasterQueues,                                             // Vector of slaves order queues
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
     slave_channels          : Arc<Mutex<Vec<(cbc::Receiver<Message>, cbc::Sender<Message>)>>>,      // Vector of slave channels. Sygt som fy
     //backup_socket           : TcpStream,                                              // Backup socket
@@ -130,6 +136,7 @@ impl Master {
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
                 locked_channel.push((slave_to_master_rx, master_to_slave_tx));
                 drop(locked_channel);
+                println!("[MASTER]\tGot new stream");
                 
                 match stream {
                     Ok(stream) => {
@@ -161,17 +168,62 @@ impl Master {
     fn send_order_to_slave(&self, nxt_order: u8, slave_number: u8) {
         let message = Message::NewOrder(nxt_order, 0); 
         let mut locked_channels = self.slave_channels.lock().unwrap();
-        locked_channels[slave_number as usize].1.send(message).unwrap(); // Skriv om for bedre lesbarehet enn 0 og 1    
+        locked_channels[slave_number as usize].1.send(message).unwrap(); // Skriv om for bedre lesbarehet enn 0 og 1 
+        println!("[MASTER]\tSent order to slave:"); 
+
+    }
+
+
+    fn recive_order_from_slave(&mut self, slave_number: u8) {
+        //ha en cbc selekt hær som lese kanala til fleire slava og håndtera det?
+        let mut locked_channels = self.slave_channels.lock().unwrap();
+        match locked_channels[slave_number as usize].0.try_recv() {
+            Ok(message) => {
+                println!("[MASTER]\tResived message from slave: {:#?}", message);
+                match message {
+                    Message::NewOrder(floor, button_type) => {
+                        if button_type == 2 {
+                            self.order_queues.add_to_cab_queue(slave_number, floor);
+                            println!("[MASTER]\tAdded order to cab queue");
+                        } else {
+                            self.order_queues.add_to_hall_queue(floor, button_type);
+                            println!("[MASTER]\tAdded order to hall queue");
+                        }
+                    }
+                    _ => {
+                        eprintln!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
+                    }
+                }
+                               
+            }
+            Err(_) => {
+                //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                
+            }
+        }   
     }
 
     // Implementer samme funksjonalitet for backup. Enten i samme func eller separat (duplisert kode :())
     
     pub fn master_loop(&mut self) {
-        for i in 0..10 {
-            println!("[MASTER]\tMaster loop iteration: {}", i);
-            sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
+        let start_time = std::time::Instant::now();
+        let duration = std::time::Duration::from_secs(15);
+    
+        while start_time.elapsed() < duration {
+            
+            self.recive_order_from_slave(0);
+
+            let order = self.order_queues.get_next_order();
+            if order != None {
+                println!("[MASTER]\tGot order from queue");
+            
+                self.send_order_to_slave(order.unwrap().0, 0); 
+            }           
+            // Optional: Add a very small sleep to avoid consuming 100% CPU
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
-       
     }
 
 }
@@ -184,6 +236,7 @@ impl Master {
 fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sender<tcp::Message>, master_to_slave_rx: cbc::Receiver<tcp::Message>) {
     let mut buffer = [0; 1024];
     loop {
+        stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
@@ -195,7 +248,7 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
                 //Implement message handlie new, I hesitate to overwhelm you with additional information. But, you could also implement a single-threaded TCP server that does something similar using tokio - then you could replace this with Rc<RefCell<Vec<String>>, which is an analogous construct for single-threaded scenarios.ng here
             }
             Err(e) => {
-                eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e)     
+                //eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e)     
                 // Handle error here  
             }
         }
@@ -204,9 +257,10 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
             Ok(message) => {
                 let encoded = bincode::serialize(&message).expect("Failed to serialize message to slave");
                 stream.write(&encoded).unwrap();
+                println!("[MASTER]\tSent message to slave: {:#?}", message);
             }
             Err(_) => {
-                eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
             }
         }
     }
