@@ -13,6 +13,7 @@ pub enum Message{
     NewOrder(u8, u8),           // Floor, Button_type
     OrderComplete,                    
     Error(ErrorState),
+    LightMatrix(Vec<[bool; 3]>)
 }
 
 
@@ -23,6 +24,15 @@ impl fmt::Display for Message {
             Message::NewOrder(floor, button_type) => write!(f, "New Order:\nFloor:\t{}\nCall:\t{}", floor, button_type),
             Message::OrderComplete => write!(f, "Order complete."),
             Message::Error(id) => write!(f, "Error: {}", id),
+            Message::LightMatrix(matrix) => {
+                // Hall_UP, Hall_DOWN, CAB_CALL
+                write!(f, "HU\tHD\tCAB\n");
+                for i in 0..matrix.len() 
+                {
+                    write!(f, "{}\t{}\t{}\n", matrix[i][0], matrix[i][1], matrix[i][2]);
+                }
+                Ok(())
+            }
         }
     }
 }

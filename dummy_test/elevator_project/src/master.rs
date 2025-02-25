@@ -76,7 +76,7 @@ pub struct Master {
     pub config              : Config,                                                   // Config struct                                 
     slaves_ip               : Vec<String>,                                              // Vector of slaves IP addresses
     backup_ip               : String,                                                   // IP address of backup
-    pub order_queues            : MasterQueues,                                             // Vector of slaves order queues
+    pub order_queues        : MasterQueues,                                             // Vector of slaves order queues
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
     slave_channels          : Arc<Mutex<Vec<(cbc::Receiver<Message>, cbc::Sender<Message>)>>>,      // Vector of slave channels. Sygt som fy
     //backup_socket           : TcpStream,                                              // Backup socket
@@ -169,8 +169,27 @@ impl Master {
         let message = Message::NewOrder(nxt_order, 0); 
         let mut locked_channels = self.slave_channels.lock().unwrap();
         locked_channels[slave_number as usize].1.send(message).unwrap(); // Skriv om for bedre lesbarehet enn 0 og 1 
-        println!("[MASTER]\tSent order to slave:"); 
+        println!("[MASTER]\tSent order to slave"); 
+    }
 
+    fn send_light_matrix_to_slave(&self, slave_number: u8) {
+        let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
+
+        for (floor, button_type) in self.order_queues.hall_queue.iter() {
+            new_matrix[*floor as usize][*button_type as usize] = true;
+        }
+
+        if self.order_queues.cab_queues.len() > 0
+        {
+            self.order_queues.cab_queues[slave_number as usize].iter().for_each(|floor| {
+                new_matrix[*floor as usize][2] = true;
+            });
+        }
+
+        let message = Message::LightMatrix(new_matrix);
+        let mut locked_channels = self.slave_channels.lock().unwrap();
+        locked_channels[slave_number as usize].1.send(message).unwrap();
+        println!("[MASTER]\tSent light matrix to slave");
     }
 
 
@@ -189,6 +208,15 @@ impl Master {
                             self.order_queues.add_to_hall_queue(floor, button_type);
                             println!("[MASTER]\tAdded order to hall queue");
                         }
+                        self.send_light_matrix_to_slave(slave_number);
+                    }
+                    Message::OrderComplete => {
+                        let nxt_order = self.order_queues.get_next_order();
+                        println!("[MASTER]\tRecieved OrderComplete");
+                        if nxt_order != None {
+                            self.send_order_to_slave(nxt_order.unwrap().0, slave_number);
+                        }
+                        self.send_light_matrix_to_slave(slave_number);
                     }
                     _ => {
                         eprintln!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
@@ -225,7 +253,6 @@ impl Master {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
-
 }
 
 
@@ -240,7 +267,7 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
-                    let recieved: tcp::Message = bincode::deserialize(&buffer[..size]).expect("Failed to deserialize message from slave");
+                    let recieved: tcp::Message = bincode::deserialize(&buffer[..size]).expect("[MASTER]\tFailed to deserialize message from slave");
                     println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
                     slave_to_master_tx.send(recieved).unwrap();
                 }
