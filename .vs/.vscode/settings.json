@@ -1,0 +1,6 @@
+{
+    "rust-analyzer.linkedProjects": [
+      "./Cargo.toml",
+      "packages/data/challenge/Cargo.toml"
+    ]
+}

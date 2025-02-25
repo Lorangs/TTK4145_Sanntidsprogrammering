@@ -10,10 +10,10 @@ pub const CAB       : u8 = 2;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message{
-    NewOrder(u8, u8),           // Floor, Button_type
+    NewOrder(u8, u8),                   // Floor, Button_type
     OrderComplete,                    
+    LightMatrix(Vec<[bool; 3]>),        // Hall_UP, Hall_DOWN, CAB_CALL for each floor
     Error(ErrorState),
-    LightMatrix(Vec<[bool; 3]>)
 }
 
 
@@ -23,7 +23,6 @@ impl fmt::Display for Message {
         match self {
             Message::NewOrder(floor, button_type) => write!(f, "New Order:\nFloor:\t{}\nCall:\t{}", floor, button_type),
             Message::OrderComplete => write!(f, "Order complete."),
-            Message::Error(id) => write!(f, "Error: {}", id),
             Message::LightMatrix(matrix) => {
                 // Hall_UP, Hall_DOWN, CAB_CALL
                 write!(f, "HU\tHD\tCAB\n");
@@ -33,6 +32,7 @@ impl fmt::Display for Message {
                 }
                 Ok(())
             }
+            Message::Error(id) => write!(f, "Error: {}", id),
         }
     }
 }

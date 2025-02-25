@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize};
 use crossbeam_channel as cbc;
 
+use driver_rust::elevio as e;
+
 use crate::config::Config;
 use crate::inputs::{self, listen_for_new_connection};
 use crate::slave;
@@ -120,21 +122,19 @@ impl Master {
         }; 
 
         
-
         // Thread for listening for new slave connections
     
         let slave_port = config.slave_port.to_string();
 
-        
         let slave_channels_clone = Arc::clone(&master.slave_channels);
-        spawn (move || {
+        spawn(move || {
             let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + slave_port.as_str()).expect("Failed to bind");
             
             for stream in listener.incoming() {
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
                 let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
-                locked_channel.push((slave_to_master_rx, master_to_slave_tx));
+                locked_channel.push((slave_to_master_tx, master_to_slave_rx));
                 drop(locked_channel);
                 println!("[MASTER]\tGot new stream");
                 
@@ -147,7 +147,6 @@ impl Master {
                         eprintln!("[MASTER]\tFailed to establish connection to slave: {}", e);
                     }
                 }
-
             }
         });
 
@@ -168,7 +167,7 @@ impl Master {
     fn send_order_to_slave(&self, nxt_order: u8, slave_number: u8) {
         let message = Message::NewOrder(nxt_order, 0); 
         let mut locked_channels = self.slave_channels.lock().unwrap();
-        locked_channels[slave_number as usize].1.send(message).unwrap(); // Skriv om for bedre lesbarehet enn 0 og 1 
+        locked_channels[slave_number as usize].0.send(message).unwrap(); // Skriv om for bedre lesbarehet enn 0 og 1 
         println!("[MASTER]\tSent order to slave"); 
     }
 
@@ -188,27 +187,27 @@ impl Master {
 
         let message = Message::LightMatrix(new_matrix);
         let mut locked_channels = self.slave_channels.lock().unwrap();
-        locked_channels[slave_number as usize].1.send(message).unwrap();
+        locked_channels[slave_number as usize].0.send(message).unwrap();
         println!("[MASTER]\tSent light matrix to slave");
     }
 
 
     fn recive_order_from_slave(&mut self, slave_number: u8) {
         //ha en cbc selekt hær som lese kanala til fleire slava og håndtera det?
+                
         let mut locked_channels = self.slave_channels.lock().unwrap();
-        match locked_channels[slave_number as usize].0.try_recv() {
+        match locked_channels[slave_number as usize].1.try_recv() {
             Ok(message) => {
                 println!("[MASTER]\tResived message from slave: {:#?}", message);
                 match message {
                     Message::NewOrder(floor, button_type) => {
-                        if button_type == 2 {
+                        if button_type == e::elevio::elev::CAB {
                             self.order_queues.add_to_cab_queue(slave_number, floor);
-                            println!("[MASTER]\tAdded order to cab queue");
+                            println!("[MASTER]\tAdded order to cab queue: {}:{}", slave_number, floor);
                         } else {
                             self.order_queues.add_to_hall_queue(floor, button_type);
-                            println!("[MASTER]\tAdded order to hall queue");
+                            println!("[MASTER]\tAdded order to hall queue: {}:{}", floor, button_type);
                         }
-                        self.send_light_matrix_to_slave(slave_number);
                     }
                     Message::OrderComplete => {
                         let nxt_order = self.order_queues.get_next_order();
@@ -216,17 +215,20 @@ impl Master {
                         if nxt_order != None {
                             self.send_order_to_slave(nxt_order.unwrap().0, slave_number);
                         }
-                        self.send_light_matrix_to_slave(slave_number);
                     }
                     _ => {
                         eprintln!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
                     }
+                    
                 }
-                               
+
+                // oppdate lights in each slave
+                for i in 0..self.config.number_of_elevators {
+                    self.send_light_matrix_to_slave(slave_number, i);
+                }
             }
             Err(_) => {
                 //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                
             }
         }   
     }
@@ -271,8 +273,6 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
                     println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
                     slave_to_master_tx.send(recieved).unwrap();
                 }
-
-                //Implement message handlie new, I hesitate to overwhelm you with additional information. But, you could also implement a single-threaded TCP server that does something similar using tokio - then you could replace this with Rc<RefCell<Vec<String>>, which is an analogous construct for single-threaded scenarios.ng here
             }
             Err(e) => {
                 //eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e)     

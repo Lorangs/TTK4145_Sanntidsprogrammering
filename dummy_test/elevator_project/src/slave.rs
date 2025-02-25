@@ -46,7 +46,7 @@ pub struct Slave {
     channels                            : inputs::SlaveChannels,                 
     master_socket                       : TcpStream,    
     door_timer                          : (cbc::Sender<bool>            , cbc::Receiver<bool>),
-    light_matrix                        : Vec<[bool; 3]>,
+    light_matrix                        : Vec<[bool; 3]>,          // Hall_UP, Hall_DOWN, CAB_CALL for each floor    
 }
 
 
@@ -58,9 +58,10 @@ impl Slave {
     {
         let conf                : Config                = config.clone();
         let elev                : e::Elevator           = e::Elevator::init(&slave_addr, config.number_of_floors).expect("Failed to initialize elevator");
-        let master_socket_addr  : SocketAddr            = SocketAddr::new(IpAddr::V4(Ipv4Addr::from_str(&config.elevator_ip_list[0]).unwrap()), config.master_port);
+
+        // TODO : Implementere master_ip og master_socket slik at den er variabel
+        let master_ip           : String                = config.elevator_ip_list[0].clone().to_string() + ":" + &config.master_port.to_string();
         let master_sckt         : TcpStream             = TcpStream::connect("127.0.0.1:4000").expect("Failed to connect to master");
-                                                            //TcpStream::connect_timeout(&master_socket_addr,Duration::from_millis(config.tcp_timeout_ms)).expect("Failed to connect to master");
         let chs                 : inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms.clone(), &master_sckt);
         let mut slave = Self {
             config              : conf,
@@ -76,14 +77,14 @@ impl Slave {
             light_matrix        : vec![[false; 3]; config.number_of_floors as usize],
         };
 
-
-        // Initiate elevator position and lights
+        // Turns all lights off
         slave.sync_lights();
         slave.elevator.door_light(false);
+
+        // Initiate elevator position and lights to the nearest floor in downwards direction
         slave.behaviour = ElevatorBehaviour::Moving;
         slave.direction = Direction::Down;
         slave.elevator.motor_direction(e::DIRN_DOWN);
-        
         
         loop {
             cbc::select! {
@@ -102,8 +103,7 @@ impl Slave {
             }
         }
 
-
-        println!("[SLAVE]\tInitialized slave:\n{}", slave);
+        println!("[SLAVE]\t\tInitialized slave:\n{}", slave);
         return slave;
     }
 
@@ -117,7 +117,7 @@ impl Slave {
         }
     }
 
-    // starter en egen tråd som sender beskjed når tidsuret for døren løper ut
+    // Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel
     pub fn start_door_timer(&self, duration: Duration) {
         let tx = self.door_timer.0.clone();
         spawn(move || {
@@ -131,11 +131,11 @@ impl Slave {
         let encoded: Vec<u8> = bincode::serialize(&message).unwrap();
         match self.master_socket.write(&encoded) {
             Ok(_)           => { 
-                println!("[SLAVE]\tSent order:\nFloor:\t{}\nButton Type:\t{}", floor, button_type);    
+                println!("[SLAVE]\t\tSent order:\nFloor:\t{}\nButton Type:\t{}", floor, button_type);    
                 return Ok(()); 
             }
             Err(e)   => { 
-                println!("[SLAVE]\tFailed to send cab order: {}", e); 
+                println!("[SLAVE]\t\tFailed to send cab order: {}", e); 
                 return Err(e);
             }
         }
@@ -145,8 +145,8 @@ impl Slave {
         let message = tcp::Message::OrderComplete;
         let encoded: Vec<u8> = bincode::serialize(&message).unwrap();
         match self.master_socket.write(&encoded) {
-            Ok(_)    => println!("[SLAVE]\tSent order complete"),
-            Err(e)   => println!("[SLAVE]\tFailed to send order complete: {}", e),
+            Ok(_)    => println!("[SLAVE]\t\tSent order complete"),
+            Err(e)   => println!("[SLAVE]\t\tFailed to send order complete: {}", e),
         }
     }
     
@@ -154,8 +154,8 @@ impl Slave {
         let message = tcp::Message::Error(tcp::ErrorState::EmergancyStop);
         let encoded: Vec<u8> = bincode::serialize(&message).unwrap();
         match self.master_socket.write(&encoded) {
-            Ok(_)           => println!("[SLAVE]\tSent stop button"),
-            Err(e)   => println!("[SLAVE]\tFailed to send stop button: {}", e),
+            Ok(_)    => println!("[SLAVE]\t\tSent stop button"),
+            Err(e)   => println!("[SLAVE]\t\tFailed to send stop button: {}", e),
         }
     }
     
@@ -165,6 +165,7 @@ impl Slave {
         if self.behaviour == ElevatorBehaviour::DoorOpen    ||
            self.behaviour == ElevatorBehaviour::OutOfOrder 
         {
+            // Do nothing if the elevator is out of order or the door is open
             return;
         }
 
@@ -188,7 +189,6 @@ impl Slave {
     }
     
 
-    // TODO! fullfør denne funksjonen
     pub fn slave_loop(&mut self) {
         loop {
             cbc::select! {
@@ -196,8 +196,8 @@ impl Slave {
                 // Receive floor sensor from elevator
                 recv(self.channels.floor_sensor_rx) -> msg => {
                     let floor_sensor = msg.unwrap();
-                    println!("[SLAVE]\tReceived floor sensor message:\t{:#?}", floor_sensor);
                     self.floor = floor_sensor;
+                    println!("[SLAVE]\t\tReceived floor sensor message:\t{:#?}", floor_sensor);
                     
                     match self.behaviour {
                         ElevatorBehaviour::Moving => {
@@ -208,7 +208,7 @@ impl Slave {
                                 self.behaviour = ElevatorBehaviour::DoorOpen;
                                 self.elevator.door_light(true); 
                                 self.start_door_timer(Duration::from_secs(3));                // starting doortimer
-                                self.send_order_complete();                                   // Send order complete message to master
+                                // self.send_order_complete();                                   // Send order complete message to master   TEST om denne hører hjemme i doortimer
                             }
                         },
                         _ => {},                                                              // Hvis heisen ikke er i bevegelse, gjør ingenting
@@ -248,11 +248,13 @@ impl Slave {
                     if self.obstruction {
                         //println!("Obstruction detected. Timer reset.");
                         self.start_door_timer(Duration::from_secs(3));
+                        println!("[SLAVE]\t\tObstruction detected. Timer reset.");
                     }
                     else {
                         println!("[SLAVE]\t\tTimer expired. Door closing.");
                         self.elevator.door_light(false);
-                        self.start_moving();
+                        self.behaviour = ElevatorBehaviour::Idle;
+                        self.send_order_complete();
                     }
                 }
 
@@ -261,17 +263,24 @@ impl Slave {
                     let message = msg.unwrap();
                     match message {
                         tcp::Message::NewOrder(floor, _button_type) => {
-                            self.nxt_order = floor;
-                            println!("[SLAVE]\t\tReceived new order: {:#?}", floor);
-                            self.start_moving();
+                            // Skal heisen selv om den er i bevegelse ta imot nye ordrer?
+                            // TEST om dette er riktig
+                            if self.behaviour == ElevatorBehaviour::Idle {
+                                self.nxt_order = floor;
+                                println!("[SLAVE]\t\tReceived new order: {:#?}", floor);
+                                self.start_moving();
+                            } 
+                            else {
+                                println!("[SLAVE]\t\tReceived new order, but elevator is not idle");
+                            }
                         },
-                        tcp::Message::OrderComplete => {},   // Do nothing for order complete message
                         tcp::Message::LightMatrix(matrix) => {
                             self.light_matrix = matrix;
+                            println!("[SLAVE]\t\tReceived light matrix");
                             self.sync_lights();
                         },
                         tcp::Message::Error(_) => { println!("[SLAVE]\t\tReceived error message from master"); },
-                        _ => {},
+                        _ => {},   // Do nothing for OrderComplete messages and other messages
                     }
                 }
             }
