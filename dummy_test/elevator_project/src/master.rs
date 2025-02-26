@@ -79,10 +79,16 @@ impl MasterQueues {
             return order;
         }
 
-        else {
-         let mut order = *self.hall_queue.front().unwrap();
-            order.in_progress = true;
-            return order;
+        else {    
+            for i in 0..self.hall_queue.len() {
+                if self.hall_queue[i].in_progress == false {
+                    self.hall_queue[i].in_progress = true;
+                    return self.hall_queue[i];
+                }      
+            }   
+            //den kjem hit vist alle orders er i progress 
+            return Order {CallButton: tcp::CallButton { floor: 0, call: 0 }, in_progress: false};        
+  
         }
     }
 
@@ -270,10 +276,9 @@ impl Master
                         // Send next order to slave
                         if (self.order_queues.lock().unwrap().hall_queue.len() > 0) || (self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0){
                             let nxt_order = self.order_queues.lock().unwrap().get_next_order(slave_number);
-                            println!("[MASTER]\tRecieved Idle");
                             let message = Message::NewOrder(nxt_order.CallButton); 
                             locked_channels[slave_number as usize].0.send(message).unwrap();
-                            println!("[MASTER]\tmessage sent");
+                            println!("[MASTER]\t New order message sent");
                         }
                     }
                     _ => {
