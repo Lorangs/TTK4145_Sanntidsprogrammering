@@ -161,6 +161,14 @@ impl Slave {
             Err(e)   => println!("[SLAVE]\t\tFailed to send stop button: {}", e),
         }
     }
+    pub fn send_idle(&mut self) {
+        let message = tcp::Message::Idle(true);
+        let encoded: Vec<u8> = bincode::serialize(&message).unwrap();
+        match self.master_socket.write(&encoded) {
+            Ok(_)    => println!("[SLAVE]\t\tSent idle"),
+            Err(e)   => println!("[SLAVE]\t\tFailed to send idle: {}", e),
+        }
+    }
     
     // velger retning basert på neste ordre
     // TODO: fullfør denne funksjonen
@@ -193,7 +201,11 @@ impl Slave {
     
 
     pub fn slave_loop(&mut self) {
+        
         loop {
+            if self.behaviour==ElevatorBehaviour::Idle{
+                self.send_idle();
+            }
             cbc::select! {
 
                 // Receive floor sensor from elevator
@@ -274,8 +286,15 @@ impl Slave {
                             if self.behaviour == ElevatorBehaviour::Idle {
                                 self.nxt_order = callbutton.clone();
                                 println!("[SLAVE]\t\tReceived new order: {:#?}", callbutton);
-                                self.start_moving();
-                            } 
+                                if self.floor == self.nxt_order.floor {
+                                    self.behaviour = ElevatorBehaviour::DoorOpen;
+                                    self.elevator.door_light(true);
+                                    self.start_door_timer(Duration::from_secs(3));
+                                }
+                                else {
+                                    self.start_moving();
+                                } 
+                            }
                             else {
                                 println!("[SLAVE]\t\tReceived new order, but elevator is not idle");
                             }

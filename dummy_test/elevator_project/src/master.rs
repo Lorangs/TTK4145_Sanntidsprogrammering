@@ -25,26 +25,26 @@ use crate::tcp::{self, Message};
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct Order {
     CallButton: tcp::CallButton,
-    in_progress: bool
+    in_progress: bool,
 }
 impl fmt::Display for Order {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.CallButton)
+        write!(f, "Order: {}, progress: {}", self.CallButton, self.in_progress)
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
-    pub hall_queue: VecDeque<Order>,            // (floor, button_type) for external hall calls.
-    pub cab_queues: Vec<VecDeque<Order>>,       // Vector of slave queues for internal cab calls.  ref driver_rust::elevio::poll::CallButton
+    pub hall_queue: VecDeque<(Order)>,            // (floor, button_type) for external hall calls.
+    pub cab_queues: Vec<VecDeque<(Order)>>,       // Vector of slave queues for internal cab calls.  ref driver_rust::elevio::poll::CallButton
 }
 
 
 
 impl MasterQueues {
     pub fn init() -> MasterQueues {
-        let hall_queue      : VecDeque<Order>    = VecDeque::new();              // (floor, button_type) for external hall calls.
-        let cab_queues      : Vec<VecDeque<Order>>     = Vec::new();                   // 
+        let hall_queue      : VecDeque<(Order)>    = VecDeque::new();              // (floor, button_type) for external hall calls.
+        let cab_queues      : Vec<VecDeque<(Order)>>     = Vec::new();                   // 
         
         MasterQueues {
             hall_queue,
@@ -72,9 +72,7 @@ impl MasterQueues {
     }
 
     pub fn get_next_order(&mut self, slave_num: u8) -> Order {
-        //reryrner fra cab que vist den e tom, returner fra hall que
-        println!("test2");
-        if self.cab_queues.len() > 0 
+        if self.cab_queues[slave_num as usize].len() > 0 
         {
             let mut order = *self.cab_queues[slave_num as usize].front().unwrap();
             order.in_progress = true;
@@ -111,7 +109,7 @@ pub struct Master
     pub config              : Config,                                                   // Config struct                                 
     slaves_ip               : Vec<String>,                                              // Vector of slaves IP addresses
     backup_ip               : String,                                                   // IP address of backup
-    pub order_queues        : MasterQueues,                                             // Vector of slaves order queues
+    pub order_queues        : Arc<Mutex<MasterQueues>>,                                             // Vector of slaves order queues
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
     slave_channels          : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,      // Vector of slave channels. Sygt som fy
     num_slaves              : Arc<Mutex<u8>>,                                                           // Variable for number of slaves in operation
@@ -151,7 +149,7 @@ impl Master
             config                  : config.clone(),
             backup_ip               : backup_ip,                              
             slaves_ip               : config.elevator_ip_list.clone(),                         
-            order_queues            : MasterQueues::init(),                   
+            order_queues            : Arc::new(Mutex::new(MasterQueues::init())),                   
             incoming_clients_rx     : incoming_conn_rx,                       
             slave_channels          : slave_channels,        
             num_slaves              : Arc::new(Mutex::new(0)),                           
@@ -162,7 +160,8 @@ impl Master
         // Thread for listening for new slave connections
     
         let slave_port = config.slave_port.to_string();
-
+        
+        let order_queues_clone = Arc::clone(&master.order_queues);
         let slave_channels_clone = Arc::clone(&master.slave_channels);
         let num_slaves_clone = Arc::clone(&master.num_slaves);
 
@@ -179,6 +178,8 @@ impl Master
                 let mut locked_num_slaves = num_slaves_clone.lock().unwrap();
                 *locked_num_slaves += 1;
                 drop(locked_num_slaves);
+
+                order_queues_clone.lock().unwrap().cab_queues.push(VecDeque::new());
 
                 println!("[MASTER]\tGot new stream");
                 
@@ -199,25 +200,19 @@ impl Master
     }
 
 
-    // Vurdere å flytte til inputs eller inne i handle_clients. Problem: Lese fra kø fra annen tråd. 
-    fn send_order_to_slave(&self, nxt_order: tcp::CallButton, slave_number: u8) {
-        let message = Message::NewOrder(nxt_order); 
-        let mut locked_channels = self.slave_channels.lock().unwrap();
-        locked_channels[slave_number as usize].0.send(message).unwrap(); // Skriv om for bedre lesbarehet enn 0 og 1 
-        println!("[MASTER]\tSent order to slave"); 
-    }
+
 
     fn make_light_matrix(&self, slave_number: u8) -> tcp::Message {
         // 3 x num_floors matrix for [hall up, hall down, cab] lights
         let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
 
-        for order in self.order_queues.hall_queue.iter() {
+        for order in self.order_queues.lock().unwrap().hall_queue.iter() {
             new_matrix[order.CallButton.floor as usize][order.CallButton.call as usize] = true;
         }
 
-        if self.order_queues.cab_queues.len() > 0
+        if self.order_queues.lock().unwrap().cab_queues.len() > 0
         {
-            self.order_queues.cab_queues[slave_number as usize].iter().for_each(|order| {
+            self.order_queues.lock().unwrap().cab_queues[slave_number as usize].iter().for_each(|order| {
                 new_matrix[order.CallButton.floor as usize][2] = true;
             });
         }
@@ -226,7 +221,6 @@ impl Master
 
 
     fn recive_order_from_slave(&mut self, slave_number: u8) {
-        //ha en cbc selekt hær som lese kanala til fleire slava og håndtera det?
                 
         let mut locked_channels = self.slave_channels.lock().unwrap();
         match locked_channels[slave_number as usize].1.try_recv() {
@@ -236,7 +230,7 @@ impl Master
                     Message::NewOrder(call_button) => {
                         if call_button.call == 2     // Cab call
                         {
-                            self.order_queues.add_to_cab_queue(slave_number, call_button.floor);
+                            self.order_queues.lock().unwrap().add_to_cab_queue(slave_number, call_button.floor);
                             let light_matrix = self.make_light_matrix(slave_number);
                             locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
                             println!("[MASTER]\tSent light matrix to slave");
@@ -244,8 +238,8 @@ impl Master
                         } 
                         else 
                         {
-                            self.order_queues.add_to_hall_queue(call_button.floor, call_button.call);
-                            println!("hall queue: {:?}", self.order_queues.hall_queue);
+                            self.order_queues.lock().unwrap().add_to_hall_queue(call_button.floor, call_button.call);
+                            println!("hall queue: {:?}", self.order_queues.lock().unwrap().hall_queue);
 
                             let locked_num_slaves = *self.num_slaves.lock().unwrap();
                             println!("{}", locked_num_slaves);
@@ -262,16 +256,24 @@ impl Master
 
                         // Remove order from Cab queue
                         if call_button.call == 2 {
-                            self.order_queues.cab_queues[slave_number as usize].pop_front();
+                            self.order_queues.lock().unwrap().cab_queues[slave_number as usize].pop_front();
+                            print!("[MASTER]\tRemoved order from cab queue");
                         } else {    // Remove order from Hall queue
-                            self.order_queues.hall_queue.pop_front();
+                            self.order_queues.lock().unwrap().hall_queue.pop_front();
+                            print!("[MASTER]\tRemoved order from hall queue");
                         }
+                        let light_matrix = self.make_light_matrix(slave_number);
+                        locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
 
-                        // If avaliable, Send next order to slave
-                        if self.order_queues.hall_queue.len() > 0 || self.order_queues.cab_queues[slave_number as usize].len() > 0 {
-                            let nxt_order = self.order_queues.get_next_order(slave_number);
-                            println!("[MASTER]\tRecieved OrderComplete");
-                            self.send_order_to_slave(nxt_order.CallButton, slave_number);
+                    }
+                    Message::Idle(state) => {
+                        // Send next order to slave
+                        if (self.order_queues.lock().unwrap().hall_queue.len() > 0) || (self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0){
+                            let nxt_order = self.order_queues.lock().unwrap().get_next_order(slave_number);
+                            println!("[MASTER]\tRecieved Idle");
+                            let message = Message::NewOrder(nxt_order.CallButton); 
+                            locked_channels[slave_number as usize].0.send(message).unwrap();
+                            println!("[MASTER]\tmessage sent");
                         }
                     }
                     _ => {
@@ -289,18 +291,14 @@ impl Master
     // Implementer samme funksjonalitet for backup. Enten i samme func eller separat (duplisert kode :())
     
     pub fn master_loop(&mut self) {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-
         loop {
-            self.recive_order_from_slave(0);
-
-            if self.order_queues.hall_queue.len() > 0 { 
-                println!("test0");
-                let order = self.order_queues.get_next_order(0);
-                println!("[MASTER]\tGot order from queue");
-                
-                self.send_order_to_slave(order.CallButton, 0); 
+            let mut locked_num_slaves = *self.num_slaves.lock().unwrap();
+            for i in 0..locked_num_slaves {
+                self.recive_order_from_slave(i);
+                //chek if slave is idle, send order
             }
+            
+            
 
             // Optional: Add a very small sleep to avoid consuming 100% CPU
             std::thread::sleep(std::time::Duration::from_millis(10));

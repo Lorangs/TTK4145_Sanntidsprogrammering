@@ -20,6 +20,7 @@ pub enum Message{
     OrderComplete(CallButton),                    
     LightMatrix(Vec<[bool; 3]>),        // Hall_UP, Hall_DOWN, CAB_CALL for each floor
     Error(ErrorState),
+    Idle(bool),
 }
 
 
@@ -38,6 +39,7 @@ impl fmt::Display for Message {
                 Ok(())
             }
             Message::Error(id) => write!(f, "Error: {}", id),
+            Message::Idle(b) => write!(f, "Idle: {}", b),
         }
     }
 }
