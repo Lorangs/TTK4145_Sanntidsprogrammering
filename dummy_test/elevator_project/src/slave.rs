@@ -5,6 +5,7 @@ use driver_rust::elevio::elev as e;
 
 use crossbeam_channel as cbc;
 use bincode;
+use driver_rust::elevio::poll::CallButton;
 
 use std::io::{Write, prelude, Result};
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -38,7 +39,7 @@ pub enum ElevatorBehaviour {
 pub struct Slave {
     pub config                          : Config,
     pub elevator                        : e::Elevator,
-    nxt_order                           : u8,
+    nxt_order                           : tcp::CallButton,
     floor                               : u8,
     obstruction                         : bool,
     direction                           : Direction,
@@ -63,10 +64,11 @@ impl Slave {
         let master_ip           : String                = config.elevator_ip_list[0].clone().to_string() + ":" + &config.master_port.to_string();
         let master_sckt         : TcpStream             = TcpStream::connect("127.0.0.1:4000").expect("Failed to connect to master");
         let chs                 : inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms.clone(), &master_sckt);
-        let mut slave = Self {
+        let mut slave = Self 
+        {
             config              : conf,
             elevator            : elev,     
-            nxt_order           : 0,
+            nxt_order           : tcp::CallButton { floor: 0, call: 0 },
             obstruction         : false,
             floor               : 0,
             direction           : Direction::Stop,
@@ -109,6 +111,7 @@ impl Slave {
 
 
     pub fn sync_lights(&self) {
+        println!("Syncing lights");
         for (floor_index, light_array) in self.light_matrix.iter().enumerate() {
             let floor = floor_index as u8;
             self.elevator.call_button_light(floor, e::HALL_UP,    light_array[0]);
@@ -126,12 +129,12 @@ impl Slave {
         });
     }
 
-    pub fn send_new_order(&mut self, floor: u8, button_type: u8) -> Result<()> {    
-        let message = tcp::Message::NewOrder(floor, button_type);
+    pub fn send_new_order(&mut self, callbutton: tcp::CallButton) -> Result<()> {    
+        let message = tcp::Message::NewOrder(callbutton.clone());
         let encoded: Vec<u8> = bincode::serialize(&message).unwrap();
         match self.master_socket.write(&encoded) {
             Ok(_)           => { 
-                println!("[SLAVE]\t\tSent order:\nFloor:\t{}\nButton Type:\t{}", floor, button_type);    
+                println!("[SLAVE]\t\tSent order:\t{}", callbutton);    
                 return Ok(()); 
             }
             Err(e)   => { 
@@ -142,7 +145,7 @@ impl Slave {
     }
 
     pub fn send_order_complete(&mut self) {
-        let message = tcp::Message::OrderComplete;
+        let message = tcp::Message::OrderComplete(self.nxt_order);
         let encoded: Vec<u8> = bincode::serialize(&message).unwrap();
         match self.master_socket.write(&encoded) {
             Ok(_)    => println!("[SLAVE]\t\tSent order complete"),
@@ -169,11 +172,11 @@ impl Slave {
             return;
         }
 
-        if self.floor == self.nxt_order {
+        if self.floor == self.nxt_order.floor {
             self.direction = Direction::Stop;
             self.behaviour = ElevatorBehaviour::Idle;
         }
-        else if self.floor > self.nxt_order {
+        else if self.floor > self.nxt_order.floor {
             self.direction = Direction::Down;
             self.behaviour = ElevatorBehaviour::Moving;
         }
@@ -197,12 +200,13 @@ impl Slave {
                 recv(self.channels.floor_sensor_rx) -> msg => {
                     let floor_sensor = msg.unwrap();
                     self.floor = floor_sensor;
-                    println!("[SLAVE]\t\tReceived floor sensor message:\t{:#?}", floor_sensor);
-                    
+                    self.elevator.floor_indicator(self.floor);
+                                        
                     match self.behaviour {
                         ElevatorBehaviour::Moving => {
                             // If the elevator is moving, check if it has reached the next order. If not: keep moving.
-                            if self.floor == self.nxt_order{
+                            if self.floor == self.nxt_order.floor
+                            {
                                 self.direction = Direction::Stop;
                                 self.elevator.motor_direction(e::DIRN_STOP);
                                 self.behaviour = ElevatorBehaviour::DoorOpen;
@@ -218,11 +222,13 @@ impl Slave {
                 // Receive call buttons from elevator
                 recv(self.channels.call_button_rx) -> msg => {
                     let call_button = msg.unwrap();
-                    println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
+                    let new_call = tcp::CallButton { floor: call_button.floor, call: call_button.call };
+
+                    println!("[SLAVE]\t\tReceived call button message: {:#?}", new_call);
                     
                     // send new order to master
-                    match self.send_new_order(call_button.floor, call_button.call) {
-                        Ok(_)   => println!("[SLAVE]\t\tSent NewOrder"),
+                    match self.send_new_order(new_call) {
+                        Ok(_)   => {},
                         Err(e)  => println!("[SLAVE]\t\tFailed to send new order: {}", e),
                     }
                 }
@@ -262,12 +268,12 @@ impl Slave {
                 recv(self.channels.master_message_rx) -> msg => {
                     let message = msg.unwrap();
                     match message {
-                        tcp::Message::NewOrder(floor, _button_type) => {
+                        tcp::Message::NewOrder(callbutton) => {
                             // Skal heisen selv om den er i bevegelse ta imot nye ordrer?
                             // TEST om dette er riktig
                             if self.behaviour == ElevatorBehaviour::Idle {
-                                self.nxt_order = floor;
-                                println!("[SLAVE]\t\tReceived new order: {:#?}", floor);
+                                self.nxt_order = callbutton.clone();
+                                println!("[SLAVE]\t\tReceived new order: {:#?}", callbutton);
                                 self.start_moving();
                             } 
                             else {
@@ -276,7 +282,7 @@ impl Slave {
                         },
                         tcp::Message::LightMatrix(matrix) => {
                             self.light_matrix = matrix;
-                            println!("[SLAVE]\t\tReceived light matrix");
+                            //println!("[SLAVE]\t\tReceived light matrix");
                             self.sync_lights();
                         },
                         tcp::Message::Error(_) => { println!("[SLAVE]\t\tReceived error message from master"); },
