@@ -1,12 +1,13 @@
 {
     "elevator_ip_list": [
         "127.0.0.1",
-        "localhost",
+        "10.1.112.64",
         "localhost"
     ],
+
+
     "master_port"           : 4000,
     "backup_port"           : 8081,
-    "slave_port"            : 4000, 
     "number_of_floors"      : 4,
     "number_of_elevators"   : 3,
     "door_open_duration_s"  : 3.0,

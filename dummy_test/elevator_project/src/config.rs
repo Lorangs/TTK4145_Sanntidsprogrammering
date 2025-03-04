@@ -13,7 +13,6 @@ pub struct Config {
     pub elevator_ip_list        : Vec<String>,
     pub master_port             : u16,
     pub backup_port             : u16,
-    pub slave_port              : u16,
     pub number_of_floors        : u8,
     pub number_of_elevators     : u8,
     pub door_open_duration_s    : f32,
@@ -28,7 +27,6 @@ impl Display for Config {
             "Elevator IP list:\t\t{:?}\n\
             Master port:\t\t\t{}\n\
             Backup port:\t\t\t{}\n\
-            Slave port:\t\t\t{}\n\
             Number of floors:\t\t{}\n\
             Number of elevators:\t\t{}\n\
             Door open duration [s]:\t\t{}\n\
@@ -36,7 +34,6 @@ impl Display for Config {
             self.elevator_ip_list, 
             self.master_port, 
             self.backup_port, 
-            self.slave_port, 
             self.number_of_floors, 
             self.number_of_elevators, 
             self.door_open_duration_s, 
