@@ -1,0 +1,1 @@
+&Arc<Mutex<Vec<(crossbeam_channel::channel::Sender<Message>, crossbeam_channel::channel::Receiver<Message>)>>>

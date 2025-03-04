@@ -126,7 +126,8 @@ impl Master
 {
     pub fn init(
         config              : &Config,
-        master_ip           : &String
+        master_ip           : &String,
+        master_queue        : MasterQueues,
     ) -> Result<Master, String> 
     {
 
@@ -340,9 +341,7 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
                 stream.write(&encoded).unwrap();
                 println!("[MASTER]\tSent message to slave: {:#?}", message);
             }
-            Err(_) => {
-                //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-            }
+            Err(_) => {}
         }
     }
 }
