@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::fmt;
+use bincode::config;
 use driver_rust::elevio::elev::DIRN_STOP;
 use driver_rust::elevio::poll::CallButton;
 use serde::{Serialize, Deserialize};
@@ -374,6 +375,8 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
     let mut buffer = [0; 1024];
     loop {
         stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+        //stream.set_read_timeout(config.tcp_timeout).expect("Failed to set read timeout");
+
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
