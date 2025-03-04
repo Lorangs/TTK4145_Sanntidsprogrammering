@@ -62,7 +62,7 @@ impl Slave {
 
         // TODO : Implementere master_ip og master_socket slik at den er variabel
         let master_ip           : String                = config.elevator_ip_list[0].clone().to_string() + ":" + &config.master_port.to_string();
-        let master_sckt         : TcpStream             = TcpStream::connect("127.0.0.1:4000").expect("Failed to connect to master");
+        let master_sckt         : TcpStream             = TcpStream::connect(master_ip).expect("Failed to connect to master");
         let chs                 : inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms.clone(), &master_sckt);
         let mut slave = Self 
         {

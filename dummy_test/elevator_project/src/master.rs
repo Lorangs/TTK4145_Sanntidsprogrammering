@@ -169,14 +169,14 @@ impl Master
         
         // Thread for listening for new slave connections
     
-        let slave_port = config.slave_port.to_string();
+        let master_port = config.master_port;
         
         let order_queues_clone = Arc::clone(&master.order_queues);
         let slave_channels_clone = Arc::clone(&master.slave_channels);
         let num_slaves_clone = Arc::clone(&master.num_slaves);
 
         spawn(move || {
-            let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + slave_port.as_str()).expect("Failed to bind");
+            let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
             
             for stream in listener.incoming() {
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
@@ -288,7 +288,9 @@ impl Master
                                     locked_channels[slave_number as usize].0.send(message).unwrap();
                                     println!("[MASTER]\t New order message sent");
                                 }
-                                None => {}
+                                None => {
+                                    // Eventuellt
+                                }
                             }
                         }
                     }
