@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-use std::sync::{Arc, Mutex};
-=======
->>>>>>> 2a57958d28a7f34a88e50aa25d01510b1fa711e6
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 use crossbeam_channel as cbc;
@@ -59,7 +55,7 @@ impl Backup{
                 Ok(message) => {
                     println!("[BACKUP]\tRecieved message from master: {:#?}", message);
                     match message{
-                        Message::BackUp(data) => {
+                        Message::Backup(data) => {
                             self.orders = data;
                         }
                         _ => {} // Do nothing for other types of incoming messages.
