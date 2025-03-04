@@ -27,6 +27,7 @@ pub struct Order {
     CallButton: tcp::CallButton,
     in_progress: bool,
 }
+
 impl fmt::Display for Order {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Order: {}, progress: {}", self.CallButton, self.in_progress)
@@ -71,23 +72,26 @@ impl MasterQueues {
         self.cab_queues[slave_num as usize].push_back(Order {CallButton: tcp::CallButton { floor, call: 2 }, in_progress: false});
     }
 
-    pub fn get_next_order(&mut self, slave_num: u8) -> Order {
+    pub fn get_next_order(&mut self, slave_num: u8) -> Option<Order> {
+        //confirmed working
         if self.cab_queues[slave_num as usize].len() > 0 
         {
             let mut order = *self.cab_queues[slave_num as usize].front().unwrap();
             order.in_progress = true;
-            return order;
+            return Some(order);
         }
 
+        // Need work
         else {    
             for i in 0..self.hall_queue.len() {
                 if self.hall_queue[i].in_progress == false {
                     self.hall_queue[i].in_progress = true;
-                    return self.hall_queue[i];
+                    return Some(self.hall_queue[i]);
                 }      
             }   
+
             //den kjem hit vist alle orders er i progress 
-            return Order {CallButton: tcp::CallButton { floor: 0, call: 0 }, in_progress: false};        
+            return None;        
   
         }
     }
@@ -242,7 +246,7 @@ impl Master
                             println!("[MASTER]\tSent light matrix to slave");
                             println!("[MASTER]\tAdded order to cab queue: {}", call_button );
                         } 
-                        else 
+                        else // Is hall call
                         {
                             self.order_queues.lock().unwrap().add_to_hall_queue(call_button.floor, call_button.call);
                             println!("hall queue: {:?}", self.order_queues.lock().unwrap().hall_queue);
@@ -274,21 +278,29 @@ impl Master
                     }
                     Message::Idle(state) => {
                         // Send next order to slave
-                        if (self.order_queues.lock().unwrap().hall_queue.len() > 0) || (self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0){
+                        if  self.order_queues.lock().unwrap().hall_queue.len() > 0 || 
+                            self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0
+                        {
                             let nxt_order = self.order_queues.lock().unwrap().get_next_order(slave_number);
-                            let message = Message::NewOrder(nxt_order.CallButton); 
-                            locked_channels[slave_number as usize].0.send(message).unwrap();
-                            println!("[MASTER]\t New order message sent");
+                            match nxt_order {
+                                Some(order) => {
+                                    let message = Message::NewOrder(nxt_order.unwrap().CallButton); 
+                                    locked_channels[slave_number as usize].0.send(message).unwrap();
+                                    println!("[MASTER]\t New order message sent");
+                                }
+                                None => {}
+                            }
                         }
                     }
+
                     _ => {
-                        eprintln!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
+                        println!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
                     }
                     
                 }
             }
             Err(_) => {
-                //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                //println!("[MASTER]\tFailed to read from master_to_slave_rx channel");
             }
         }   
     }
