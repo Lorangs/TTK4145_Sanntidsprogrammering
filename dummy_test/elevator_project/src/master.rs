@@ -119,7 +119,7 @@ pub struct Master
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
     slave_channels          : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,      // Vector of slave channels. Sygt som fy
     num_slaves              : Arc<Mutex<u8>>,                                                           // Variable for number of slaves in operation
-    //backup_socket           : TcpStream,                                              // Backup socket
+
 }
 
 impl Master 
@@ -139,16 +139,7 @@ impl Master
                                                         };
       
 
-
-/* 
-        // connect to backup. Will not continue until connection is established
-        let mut backup_socket : Option<TcpStream> = None;
-        while backup_socket.is_none() {
-            backup_socket = listen_for_new_connection(&config.backup_port.to_string()) 
-        } */
-
-
-        // Create channel for incoming connections                                                                                                  
+                                                        // Create channel for incoming connections                                                                                                  
         let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
         let mut slave_channels : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -156,11 +147,10 @@ impl Master
             config                  : config.clone(),
             backup_ip               : backup_ip,                              
             slaves_ip               : config.elevator_ip_list.clone(),                         
-            order_queues            : Arc::new(Mutex::new(MasterQueues::init())),                   
+            order_queues            : Arc::new(Mutex::new(master_queue)),                   
             incoming_clients_rx     : incoming_conn_rx,                       
             slave_channels          : slave_channels,        
-            num_slaves              : Arc::new(Mutex::new(0)),                           
-            //backup_socket           : backup_socket,                          
+            num_slaves              : Arc::new(Mutex::new(0)),                                                    
         }; 
 
         

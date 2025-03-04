@@ -1,7 +1,6 @@
 #![allow(warnings)]
 
-use elevator_project::config::Config;
-use elevator_project::backup::Backup;
+use elevator_project::{config::Config, backup::Backup, master::Master};
 use std::path::Path;
 
 
@@ -10,11 +9,12 @@ fn main() {
     let config = Config::config(Path::new("config.json")).unwrap();
     let backup_ip   = config.elevator_ip_list[1].to_string() + ":" + &config.backup_port.to_string();
 
-    let mut backup = Backup::init(&config);
-
-    let backup.backup_loop(); 
-
     
-
+    loop {
+        let mut backup = Backup::init(&config);
+        let mut masterqueues = backup.backup_loop(); 
+        let mut master = Master::init(&config, &backup_ip, masterqueues).unwrap();
+        master.master_loop();
+    }
         
 }
