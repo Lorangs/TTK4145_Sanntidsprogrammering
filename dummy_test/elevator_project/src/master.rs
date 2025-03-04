@@ -123,7 +123,7 @@ pub struct Master
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
     slave_channels          : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,      // Vector of slave channels. Sygt som fy
     num_slaves              : Arc<Mutex<u8>>,                                                           // Variable for number of slaves in operation
-    //backup_socket           : TcpStream,                                              // Backup socket
+    backup_channel          : (cbc::Sender<Message>, cbc::Receiver<Message>),
 }
 
 impl Master 
@@ -143,14 +143,20 @@ impl Master
       
 
 
-/* 
-        // connect to backup. Will not continue until connection is established
+
+        // Connect to backup. Will not continue until connection is established
         let mut backup_socket : Option<TcpStream> = None;
         while backup_socket.is_none() {
-            backup_socket = listen_for_new_connection(&config.backup_port.to_string()) 
-        } */
+            backup_socket = listen_for_new_connection(&config.backup_port.to_string()); 
+        }
 
+        // Create channel for backup connection
+        let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
+        let (backup_to_master_tx , backup_to_master_rx) = cbc::unbounded();
 
+        spawn(|| handle_backup_connection(backup_socket.unwrap(), backup_to_master_tx, master_to_backup_rx));
+
+    
         // Create channel for incoming connections                                                                                                  
         let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
         let mut slave_channels : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::new(Mutex::new(Vec::new()));
@@ -162,8 +168,8 @@ impl Master
             order_queues            : Arc::new(Mutex::new(MasterQueues::init())),                   
             incoming_clients_rx     : incoming_conn_rx,                       
             slave_channels          : slave_channels,        
-            num_slaves              : Arc::new(Mutex::new(0)),                           
-            //backup_socket           : backup_socket,                          
+            num_slaves              : Arc::new(Mutex::new(0)),          
+            backup_channel          : (master_to_backup_tx, backup_to_master_rx),                 
         }; 
 
         
@@ -233,6 +239,8 @@ impl Master
     fn recive_order_from_slave(&mut self, slave_number: u8) {
                 
         let mut locked_channels = self.slave_channels.lock().unwrap();
+        let locked_num_slaves = *self.num_slaves.lock().unwrap();
+
         match locked_channels[slave_number as usize].1.try_recv() {
             Ok(message) => 
             {                
@@ -241,24 +249,40 @@ impl Master
                         if call_button.call == 2     // Cab call
                         {
                             self.order_queues.lock().unwrap().add_to_cab_queue(slave_number, call_button.floor);
-                            let light_matrix = self.make_light_matrix(slave_number);
-                            locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
-                            println!("[MASTER]\tSent light matrix to slave");
                             println!("[MASTER]\tAdded order to cab queue: {}", call_button );
+                            let light_matrix = self.make_light_matrix(slave_number);
+                            match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                Ok(_) => {
+                                    println!("[MASTER]\tSent order to backup");
+                                    locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
+                                    println!("[MASTER]\tSent light matrix to slave");
+                                }
+                                Err(_) => {
+                                    println!("[MASTER]\tFailed to send order to backup");
+                                    // TODO Handle error
+                                }
+                            }
+                                           
                         } 
                         else // Is hall call
                         {
                             self.order_queues.lock().unwrap().add_to_hall_queue(call_button.floor, call_button.call);
                             println!("hall queue: {:?}", self.order_queues.lock().unwrap().hall_queue);
 
-                            let locked_num_slaves = *self.num_slaves.lock().unwrap();
-                            println!("{}", locked_num_slaves);
-                            for i in 0..locked_num_slaves {
-                                let light_matrix = self.make_light_matrix(i as u8);
-                                locked_channels[i as usize].0.send(light_matrix).unwrap();
-                                println!("[MASTER]\tSent light matrix to slave {}", i);
+                            match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                Ok(_) => {
+                                    for i in 0..locked_num_slaves {
+                                        let light_matrix = self.make_light_matrix(i as u8);
+                                        locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                        println!("[MASTER]\tSent light matrix to slave {}", i);
+                                    }
+                                    println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
+                                }
+                                Err(_) => {
+                                    println!("[MASTER]\tFailed to send order to backup");
+                                    // TODO Handle error
+                                }
                             }
-                            println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
                         }
                     }
                     Message::OrderComplete(call_button) => {
@@ -272,10 +296,26 @@ impl Master
                             self.order_queues.lock().unwrap().hall_queue.pop_front();
                             print!("[MASTER]\tRemoved order from hall queue");
                         }
+
                         let light_matrix = self.make_light_matrix(slave_number);
-                        locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
+
+                        match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                            Ok(_) => {
+                                for i in 0..locked_num_slaves {
+                                    let light_matrix = self.make_light_matrix(i as u8);
+                                    locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                    println!("[MASTER]\tSent light matrix to slave {}", i);
+                                }
+                                println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
+                            }
+                            Err(_) => {
+                                println!("[MASTER]\tFailed to send order to backup");
+                                // TODO Handle error
+                            }
+                        }
 
                     }
+
                     Message::Idle(state) => {
                         // Send next order to slave
                         if  self.order_queues.lock().unwrap().hall_queue.len() > 0 || 
@@ -353,6 +393,25 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
                 let encoded = bincode::serialize(&message).expect("Failed to serialize message to slave");
                 stream.write(&encoded).unwrap();
                 println!("[MASTER]\tSent message to slave: {:#?}", message);
+            }
+            Err(_) => {
+                //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+            }
+        }
+    }
+}
+
+
+fn handle_backup_connection(mut stream: TcpStream, backup_to_master_tx: cbc::Sender<tcp::Message>, master_to_backup_rx: cbc::Receiver<tcp::Message>) {
+    let mut buffer = [0; 1024];
+    loop {
+        //stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+
+        match master_to_backup_rx.recv() {
+            Ok(message) => {
+                let encoded = bincode::serialize(&message).expect("Failed to serialize message to backup");
+                stream.write(&encoded).unwrap();
+                println!("[MASTER]\tSent order to backup: {:#?}", message);
             }
             Err(_) => {
                 //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");

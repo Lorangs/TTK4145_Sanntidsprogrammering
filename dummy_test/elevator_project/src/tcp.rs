@@ -1,6 +1,7 @@
 // This file contains the TCP module, which is responsible for handling the TCP connection between the elevator and the scheduler.
 use std::fmt;
 use serde::{Serialize, Deserialize};
+use crate::master::MasterQueues;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
@@ -21,6 +22,7 @@ pub enum Message{
     LightMatrix(Vec<[bool; 3]>),        // Hall_UP, Hall_DOWN, CAB_CALL for each floor
     Error(ErrorState),
     Idle(bool),
+    Backup(MasterQueues),
 }
 
 
@@ -39,6 +41,7 @@ impl fmt::Display for Message {
                 Ok(())
             }
             Message::Error(id) => write!(f, "Error: {}", id),
+            Message::Backup(b) => write!(f, "Backup: {:#?}", b),
             Message::Idle(b) => write!(f, "Idle: {}", b),
         }
     }
