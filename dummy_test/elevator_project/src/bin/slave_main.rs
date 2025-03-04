@@ -21,5 +21,3 @@ fn main() {
     slave.slave_loop();
 }
 
-//Standar heis: "127.0.0.1.15657"
-//Heis 2: "127.0.0.1.15658"
