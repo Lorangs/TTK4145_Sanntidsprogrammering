@@ -131,7 +131,8 @@ impl Master
 {
     pub fn init(
         config              : &Config,
-        master_ip           : &String
+        master_ip           : &String,
+        master_queue        : MasterQueues,
     ) -> Result<Master, String> 
     {
 
@@ -166,7 +167,7 @@ impl Master
             config                  : config.clone(),
             backup_ip               : backup_ip,                              
             slaves_ip               : config.elevator_ip_list.clone(),                         
-            order_queues            : Arc::new(Mutex::new(MasterQueues::init())),                   
+            order_queues            : Arc::new(Mutex::new(master_queue)),                   
             incoming_clients_rx     : incoming_conn_rx,                       
             slave_channels          : slave_channels,        
             num_slaves              : Arc::new(Mutex::new(0)),          
@@ -237,128 +238,115 @@ impl Master
     }
 
 
-    fn recive_order_from_slave(&mut self, slave_number: u8) {
-                
-        let mut locked_channels = self.slave_channels.lock().unwrap();
-        let locked_num_slaves = *self.num_slaves.lock().unwrap();
-
-        match locked_channels[slave_number as usize].1.try_recv() {
-            Ok(message) => 
-            {                
-                match message {
-                    Message::NewOrder(call_button) => {
-                        if call_button.call == 2     // Cab call
-                        {
-                            self.order_queues.lock().unwrap().add_to_cab_queue(slave_number, call_button.floor);
-                            println!("[MASTER]\tAdded order to cab queue: {}", call_button );
-                            let light_matrix = self.make_light_matrix(slave_number);
-                            match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
-                                Ok(_) => {
-                                    println!("[MASTER]\tSent order to backup");
-                                    locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
-                                    println!("[MASTER]\tSent light matrix to slave");
-                                }
-                                Err(_) => {
-                                    println!("[MASTER]\tFailed to send order to backup");
-                                    // TODO Handle error
-                                }
-                            }
-                                           
-                        } 
-                        else // Is hall call
-                        {
-                            self.order_queues.lock().unwrap().add_to_hall_queue(call_button.floor, call_button.call);
-                            println!("hall queue: {:?}", self.order_queues.lock().unwrap().hall_queue);
-
-                            match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
-                                Ok(_) => {
-                                    for i in 0..locked_num_slaves {
-                                        let light_matrix = self.make_light_matrix(i as u8);
-                                        locked_channels[i as usize].0.send(light_matrix).unwrap();
-                                        println!("[MASTER]\tSent light matrix to slave {}", i);
-                                    }
-                                    println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
-                                }
-                                Err(_) => {
-                                    println!("[MASTER]\tFailed to send order to backup");
-                                    // TODO Handle error
-                                }
-                            }
-                        }
-                    }
-                    Message::OrderComplete(call_button) => {
-                        println!("[MASTER]\tRecieved OrderComplete: {}", call_button);
-
-                        // Remove order from Cab queue
-                        if call_button.call == 2 {
-                            self.order_queues.lock().unwrap().cab_queues[slave_number as usize].pop_front();
-                            print!("[MASTER]\tRemoved order from cab queue");
-                        } else {    // Remove order from Hall queue
-                            self.order_queues.lock().unwrap().hall_queue.pop_front();
-                            print!("[MASTER]\tRemoved order from hall queue");
-                        }
-
-                        let light_matrix = self.make_light_matrix(slave_number);
-
-                        match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
-                            Ok(_) => {
-                                for i in 0..locked_num_slaves {
-                                    let light_matrix = self.make_light_matrix(i as u8);
-                                    locked_channels[i as usize].0.send(light_matrix).unwrap();
-                                    println!("[MASTER]\tSent light matrix to slave {}", i);
-                                }
-                                println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
-                            }
-                            Err(_) => {
-                                println!("[MASTER]\tFailed to send order to backup");
-                                // TODO Handle error
-                            }
-                        }
-
-                    }
-
-                    Message::Idle(state) => {
-                        // Send next order to slave
-                        if  self.order_queues.lock().unwrap().hall_queue.len() > 0 || 
-                            self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0
-                        {
-                            let nxt_order = self.order_queues.lock().unwrap().get_next_order(slave_number);
-                            match nxt_order {
-                                Some(order) => {
-                                    let message = Message::NewOrder(nxt_order.unwrap().CallButton); 
-                                    locked_channels[slave_number as usize].0.send(message).unwrap();
-                                    println!("[MASTER]\t New order message sent");
-                                }
-                                None => {
-                                    // Eventuellt
-                                }
-                            }
-                        }
-                    }
-
-                    _ => {
-                        println!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
-                    }
-                    
-                }
-            }
-            Err(_) => {
-                //println!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-            }
-        }   
-    }
-
-    // Implementer samme funksjonalitet for backup. Enten i samme func eller separat (duplisert kode :())
-    
     pub fn master_loop(&mut self) {
+        let mut locked_channels = self.slave_channels.lock().unwrap();
+        let mut locked_num_slaves = *self.num_slaves.lock().unwrap();
         loop {
-            let mut locked_num_slaves = *self.num_slaves.lock().unwrap();
-            for i in 0..locked_num_slaves {
-                self.recive_order_from_slave(i);
-                //chek if slave is idle, send order
+            for slave_number in 0..locked_num_slaves {
+                match locked_channels[slave_number as usize].1.try_recv() {
+                    Ok(message) => 
+                    {                
+                        match message {
+                            Message::NewOrder(call_button) => {
+                                if call_button.call == 2     // Cab call
+                                {
+                                    self.order_queues.lock().unwrap().add_to_cab_queue(slave_number, call_button.floor);
+                                    println!("[MASTER]\tAdded order to cab queue: {}", call_button );
+                                    let light_matrix = self.make_light_matrix(slave_number);
+                                    match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                        Ok(_) => {
+                                            println!("[MASTER]\tSent order to backup");
+                                            locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
+                                            println!("[MASTER]\tSent light matrix to slave");
+                                        }
+                                        Err(_) => {
+                                            println!("[MASTER]\tFailed to send order to backup");
+                                            // TODO Handle error
+                                        }
+                                    }
+                                                   
+                                } else // Is hall call
+                                {
+                                    self.order_queues.lock().unwrap().add_to_hall_queue(call_button.floor, call_button.call);
+                                    println!("hall queue: {:?}", self.order_queues.lock().unwrap().hall_queue);
+        
+                                    match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                        Ok(_) => {
+                                            for i in 0..locked_num_slaves {
+                                                let light_matrix = self.make_light_matrix(i as u8);
+                                                locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                                println!("[MASTER]\tSent light matrix to slave {}", i);
+                                            }
+                                            println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
+                                        }
+                                        Err(_) => {
+                                            println!("[MASTER]\tFailed to send order to backup");
+                                            // TODO Handle error
+                                        }
+                                    }
+                                }
+                            }
+                            Message::OrderComplete(call_button) => {
+                                println!("[MASTER]\tRecieved OrderComplete: {}", call_button);
+        
+                                // Remove order from Cab queue
+                                if call_button.call == 2 {
+                                    self.order_queues.lock().unwrap().cab_queues[slave_number as usize].pop_front();
+                                    print!("[MASTER]\tRemoved order from cab queue");
+                                } else {    // Remove order from Hall queue
+                                    self.order_queues.lock().unwrap().hall_queue.pop_front();
+                                    print!("[MASTER]\tRemoved order from hall queue");
+                                }
+        
+                                let light_matrix = self.make_light_matrix(slave_number);
+        
+                                match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                    Ok(_) => {
+                                        for i in 0..locked_num_slaves {
+                                            let light_matrix = self.make_light_matrix(i as u8);
+                                            locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                            println!("[MASTER]\tSent light matrix to slave {}", i);
+                                        }
+                                        println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
+                                    }
+                                    Err(_) => {
+                                        println!("[MASTER]\tFailed to send order to backup");
+                                        // TODO Handle error
+                                    }
+                                }
+        
+                            }
+        
+                            Message::Idle(state) => {
+                                // Send next order to slave
+                                if  self.order_queues.lock().unwrap().hall_queue.len() > 0 || 
+                                    self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0
+                                {
+                                    let nxt_order = self.order_queues.lock().unwrap().get_next_order(slave_number);
+                                    match nxt_order {
+                                        Some(order) => {
+                                            let message = Message::NewOrder(nxt_order.unwrap().CallButton); 
+                                            locked_channels[slave_number as usize].0.send(message).unwrap();
+                                            println!("[MASTER]\t New order message sent");
+                                        }
+                                        None => {
+                                            // Eventuellt
+                                        }
+                                    }
+                                }
+                            }
+        
+                            _ => {
+                                println!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
+                            }
+                            
+                        }
+                    }
+                    Err(_) => {
+                        //println!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                    }
+                }   
             }
-            
-            
 
             // Optional: Add a very small sleep to avoid consuming 100% CPU
             std::thread::sleep(std::time::Duration::from_millis(10));

@@ -12,7 +12,8 @@ use crate::master::MasterQueues;
 pub struct Backup{
     config                  : Config,   
     orders                  : MasterQueues,     
-    master_channels         : (cbc::Sender<Message>, cbc::Receiver<Message>),
+    master_to_backup_rx     : cbc::Receiver<Message>,
+    backup_to_master_tx     : cbc::Sender<Message>,
 }
 
 impl Backup{
@@ -32,11 +33,13 @@ impl Backup{
                         let backup = Backup {
                             config              : config.clone(),
                             orders              : MasterQueues::init(),
-                            master_channels     : (backup_to_master_tx, master_to_backup_rx),
+                            master_to_backup_rx : master_to_backup_rx,
+                            backup_to_master_tx : backup_to_master_tx
                         };
                         
                         println!("[BACKUP]\tConnected to master: {}", stream.peer_addr().unwrap());
-                        spawn(|| handle_master_connection(stream, master_to_backup_tx, backup_to_master_rx));
+                        let tcp_timeout_ms = config.tcp_timeout_ms.clone();
+                        spawn(move || handle_master_connection(stream, master_to_backup_tx, backup_to_master_rx, tcp_timeout_ms));
                         return backup;
                     }
                     Err(e) => {
@@ -48,13 +51,13 @@ impl Backup{
         }
     }
 
-    fn backup_loop(&mut self){
+    pub fn backup_loop(&mut self) -> MasterQueues {
         loop {
-            match self.master_channels.1.recv() {
+            match self.master_to_backup_rx.recv() {
                 Ok(message) => {
                     println!("[BACKUP]\tRecieved message from master: {:#?}", message);
                     match message{
-                        Message::BackUp(data) => {
+                        Message::Backup(data) => {
                             self.orders = data;
                         }
                         _ => {} // Do nothing for other types of incoming messages.
@@ -62,29 +65,27 @@ impl Backup{
                 }
                 Err(cbc::RecvError) => {
                     println!("[BACKUP]\tMaster disconnected");
-                    // start self as new master
-                    
+                    return self.orders.clone();
 
-                    break;
+
                 }
             }
         }
     }
-
-
 }
 
 
 fn handle_master_connection
 (
-    mut stream: TcpStream,
-    master_to_backup_tx: cbc::Sender<Message>,
-    backup_to_master_rx: cbc::Receiver<Message>,
+    mut stream              : TcpStream,
+    master_to_backup_tx     : cbc::Sender<Message>,
+    backup_to_master_rx     : cbc::Receiver<Message>,
+    tcp_timeout_ms          : u64,        
 ) -> Result<(), cbc::RecvError>
 {
     let mut encoded = [0; 1024];
     loop{
-        stream.set_read_timeout(self.config.tcp_timeout_ms).expect("Failed to set read timeout");
+        stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout");
         match stream.read(&mut encoded){
             Ok(size) => {
                 if size > 0 {
@@ -98,14 +99,6 @@ fn handle_master_connection
                 println!("Error: {}", e);
                 return Err(cbc::RecvError);
             }
-        }
-
-        match backup_to_master_rx.try_recv(){
-            Ok(message) => {
-                let encoded = bincode::serialize(&message).expect("Failed to serialize message");
-                stream.write(&encoded).expect("Failed to write to stream");
-            }
-            Err(_) => {}
         }
     }
 }
