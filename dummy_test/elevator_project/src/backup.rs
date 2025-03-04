@@ -12,7 +12,8 @@ use crate::master::MasterQueues;
 pub struct Backup{
     config                  : Config,   
     orders                  : MasterQueues,     
-    master_channels         : (cbc::Sender<Message>, cbc::Receiver<Message>),
+    master_to_backup_rx     : cbc::Receiver<Message>,
+    backup_to_master_tx     : cbc::Sender<Message>,
 }
 
 impl Backup{
@@ -32,7 +33,8 @@ impl Backup{
                         let backup = Backup {
                             config              : config.clone(),
                             orders              : MasterQueues::init(),
-                            master_channels     : (backup_to_master_tx, master_to_backup_rx),
+                            master_to_backup_rx : master_to_backup_rx,
+                            backup_to_master_tx : backup_to_master_tx
                         };
                         
                         println!("[BACKUP]\tConnected to master: {}", stream.peer_addr().unwrap());
@@ -51,7 +53,7 @@ impl Backup{
 
     pub fn backup_loop(&mut self) -> MasterQueues {
         loop {
-            match self.master_channels.1.recv() {
+            match self.master_to_backup_rx.recv() {
                 Ok(message) => {
                     println!("[BACKUP]\tRecieved message from master: {:#?}", message);
                     match message{
