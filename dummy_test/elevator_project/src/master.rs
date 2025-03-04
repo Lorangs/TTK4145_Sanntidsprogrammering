@@ -118,12 +118,11 @@ pub struct Master
 {
     pub config              : Config,                                                   // Config struct                                 
     slaves_ip               : Vec<String>,                                              // Vector of slaves IP addresses
-    backup_ip               : String,                                                   // IP address of backup
     pub order_queues        : Arc<Mutex<MasterQueues>>,                                             // Vector of slaves order queues
     incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
     slave_channels          : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,      // Vector of slave channels. Sygt som fy
     num_slaves              : Arc<Mutex<u8>>,                                                           // Variable for number of slaves in operation
-    backup_channel          : (cbc::Sender<Message>, cbc::Receiver<Message>),
+    master_to_backup_tx     : Arc<Mutex<cbc::Sender<Message>>>
 }
 
 impl Master 
@@ -136,51 +135,29 @@ impl Master
     {
 
         let conf            : Config    = config.clone();
-        let backup_ip       : String            = match config.elevator_ip_list.iter().find(|&ip| *ip != *master_ip) 
-                                                        {
-                                                            Some(ip) => ip.to_string() + ":" + &config.backup_port.to_string(),
-                                                            None => return Err("No valid backup IP found".to_string())
-                                                        };
-      
-
-
-
-        // Connect to backup. Will not continue until connection is established
-        let mut backup_socket : Option<TcpStream> = None;
-        while backup_socket.is_none() {
-            backup_socket = listen_for_new_connection(&config.backup_port.to_string()); 
-        }
-
-        // Create channel for backup connection
-        let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
-        let (backup_to_master_tx , backup_to_master_rx) = cbc::unbounded();
-
-        spawn(|| handle_backup_connection(backup_socket.unwrap(), backup_to_master_tx, master_to_backup_rx));
-
-    
-        // Create channel for incoming connections                                                                                                  
+                                                                                                
+        // Thread for listening for new slave connections
         let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
         let mut slave_channels : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::new(Mutex::new(Vec::new()));
 
         let mut master = Master {
-            config                  : config.clone(),
-            backup_ip               : backup_ip,                              
+            config                  : config.clone(),                           
             slaves_ip               : config.elevator_ip_list.clone(),                         
             order_queues            : Arc::new(Mutex::new(master_queue)),                   
             incoming_clients_rx     : incoming_conn_rx,                       
             slave_channels          : slave_channels,        
             num_slaves              : Arc::new(Mutex::new(0)),          
-            backup_channel          : (master_to_backup_tx, backup_to_master_rx),                 
+            master_to_backup_tx     : Arc::new(Mutex::new(cbc::unbounded().0)),        
         }; 
 
-        
-        // Thread for listening for new slave connections
+        // find an avaliable backup to connect to
+        master.connect_to_new_backup();
     
         let master_port = config.master_port;
         
-        let order_queues_clone = Arc::clone(&master.order_queues);
-        let slave_channels_clone = Arc::clone(&master.slave_channels);
-        let num_slaves_clone = Arc::clone(&master.num_slaves);
+        let order_queues_clone: Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
+        let slave_channels_clone: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::clone(&master.slave_channels);
+        let num_slaves_clone: Arc<Mutex<u8>> = Arc::clone(&master.num_slaves);
 
         spawn(move || {
             let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
@@ -217,6 +194,31 @@ impl Master
     }
 
 
+    fn connect_to_new_backup(&mut self) {
+        let backup_ip_list: Vec<String> = self.config.elevator_ip_list.iter()
+            .map(|ip| format!("{}:{}", ip, self.config.backup_port))
+            .collect();
+
+        for backup_ip in backup_ip_list {
+            match TcpStream::connect(&backup_ip) {
+                Ok(backup_socket) => {
+                    // Create channel for backup connection
+                    let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
+                    spawn(|| handle_backup_connection(backup_socket, master_to_backup_rx));
+
+
+                    let mut locked_backup_channel = self.master_to_backup_tx.lock().unwrap().clone();
+                    locked_backup_channel = master_to_backup_tx;
+
+                    println!("[MASTER]\tConnected to backup at {}", backup_ip);
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("[MASTER]\tFailed to connect to backup at {}: {}", backup_ip, e);
+                }
+            }
+        }
+    }
 
 
     fn make_light_matrix(&self, slave_number: u8) -> tcp::Message {
@@ -238,6 +240,7 @@ impl Master
 
 
     pub fn master_loop(&mut self) {
+        let mut locked_backup = self.master_to_backup_tx.lock().unwrap();
         let mut locked_channels = self.slave_channels.lock().unwrap();
         let mut locked_num_slaves = *self.num_slaves.lock().unwrap();
         loop {
@@ -252,7 +255,7 @@ impl Master
                                     self.order_queues.lock().unwrap().add_to_cab_queue(slave_number, call_button.floor);
                                     println!("[MASTER]\tAdded order to cab queue: {}", call_button );
                                     let light_matrix = self.make_light_matrix(slave_number);
-                                    match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                    match self.master_to_backup_tx.lock().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
                                         Ok(_) => {
                                             println!("[MASTER]\tSent order to backup");
                                             locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
@@ -260,7 +263,8 @@ impl Master
                                         }
                                         Err(_) => {
                                             println!("[MASTER]\tFailed to send order to backup");
-                                            // TODO Handle error
+                                            println!("[MASTER]\tConnecting to a new backup.");
+                                            self.connect_to_new_backup();
                                         }
                                     }
                                                    
@@ -269,7 +273,7 @@ impl Master
                                     self.order_queues.lock().unwrap().add_to_hall_queue(call_button.floor, call_button.call);
                                     println!("hall queue: {:?}", self.order_queues.lock().unwrap().hall_queue);
         
-                                    match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                    match self.master_to_backup_tx.lock().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
                                         Ok(_) => {
                                             for i in 0..locked_num_slaves {
                                                 let light_matrix = self.make_light_matrix(i as u8);
@@ -280,7 +284,8 @@ impl Master
                                         }
                                         Err(_) => {
                                             println!("[MASTER]\tFailed to send order to backup");
-                                            // TODO Handle error
+                                            println!("[MASTER]\tConnecting to a new backup.");
+                                            self.connect_to_new_backup();
                                         }
                                     }
                                 }
@@ -299,7 +304,7 @@ impl Master
         
                                 let light_matrix = self.make_light_matrix(slave_number);
         
-                                match self.backup_channel.0.send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                match self.master_to_backup_tx.lock().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
                                     Ok(_) => {
                                         for i in 0..locked_num_slaves {
                                             let light_matrix = self.make_light_matrix(i as u8);
@@ -310,7 +315,8 @@ impl Master
                                     }
                                     Err(_) => {
                                         println!("[MASTER]\tFailed to send order to backup");
-                                        // TODO Handle error
+                                        println!("[MASTER]\tConnecting to a new backup.");
+                                        self.connect_to_new_backup();
                                     }
                                 }
         
@@ -390,7 +396,12 @@ fn handle_slave_connection(mut stream: TcpStream, slave_to_master_tx: cbc::Sende
 }
 
 
-fn handle_backup_connection(mut stream: TcpStream, backup_to_master_tx: cbc::Sender<tcp::Message>, master_to_backup_rx: cbc::Receiver<tcp::Message>) {
+fn handle_backup_connection
+(
+    mut stream: TcpStream,
+    master_to_backup_rx: cbc::Receiver<tcp::Message>,
+)
+{
     let mut buffer = [0; 1024];
     loop {
         //stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
@@ -407,3 +418,4 @@ fn handle_backup_connection(mut stream: TcpStream, backup_to_master_tx: cbc::Sen
         }
     }
 }
+

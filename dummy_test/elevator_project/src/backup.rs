@@ -13,7 +13,6 @@ pub struct Backup{
     config                  : Config,   
     orders                  : MasterQueues,     
     master_to_backup_rx     : cbc::Receiver<Message>,
-    backup_to_master_tx     : cbc::Sender<Message>,
 }
 
 impl Backup{
@@ -29,17 +28,16 @@ impl Backup{
                 match stream{
                     Ok(stream) => {
                         let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded::<Message>();
-                        let (backup_to_master_tx, backup_to_master_rx) = cbc::unbounded::<Message>();
+                        
                         let backup = Backup {
                             config              : config.clone(),
                             orders              : MasterQueues::init(),
-                            master_to_backup_rx : master_to_backup_rx,
-                            backup_to_master_tx : backup_to_master_tx
+                            master_to_backup_rx : master_to_backup_rx
                         };
                         
-                        println!("[BACKUP]\tConnected to master: {}", stream.peer_addr().unwrap());
                         let tcp_timeout_ms = config.tcp_timeout_ms.clone();
-                        spawn(move || handle_master_connection(stream, master_to_backup_tx, backup_to_master_rx, tcp_timeout_ms));
+                        spawn(move || handle_master_connection(stream, master_to_backup_tx, tcp_timeout_ms));
+                        println!("[BACKUP]\tConnected to master");
                         return backup;
                     }
                     Err(e) => {
@@ -79,9 +77,8 @@ fn handle_master_connection
 (
     mut stream              : TcpStream,
     master_to_backup_tx     : cbc::Sender<Message>,
-    backup_to_master_rx     : cbc::Receiver<Message>,
     tcp_timeout_ms          : u64,        
-) -> Result<(), cbc::RecvError>
+) //-> Result<(), cbc::RecvError>
 {
     let mut encoded = [0; 1024];
     loop{
@@ -97,7 +94,7 @@ fn handle_master_connection
             }
             Err(e) => {
                 println!("Error: {}", e);
-                return Err(cbc::RecvError);
+                //return Err(cbc::RecvError);
             }
         }
     }
