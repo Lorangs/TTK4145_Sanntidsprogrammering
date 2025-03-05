@@ -257,20 +257,23 @@ impl Master
                   
                                     println!("[MASTER]\tAdded order to cab queue: {}", call_button );
 
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
-                                        Ok(_) => {
-                                            println!("test  ");
-                                            let light_matrix = self.make_light_matrix(slave_number, orders_locked.clone());
-                                            println!("test 2");
-                                            locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
-                                            println!("[MASTER]\tSent light matrix to slave");
-                                        }
-                                        Err(_) => {    
-                                            println!("[MASTER]\tFailed to send order to backup");
-                                            println!("[MASTER]\tConnecting to a new backup.");
-                                            self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
-                                        }
-                                    }                                                
+                                    if self.master_to_backup_tx.is_none() {
+                                        println!("[MASTER]\tConnecting to a new backup.");
+                                        self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
+                                    }
+                                    else {
+                                        match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
+                                            Ok(_) => {
+                                                let light_matrix = self.make_light_matrix(slave_number, orders_locked.clone());
+                                                locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
+                                                println!("[MASTER]\tSent light matrix to slave");
+                                            }
+                                            Err(_) => {    
+                                                println!("[MASTER]\tFailed to send order to backup");
+                                                self.master_to_backup_tx = None;
+                                            }
+                                        }                                                
+                                    }
                                 } 
                                 else // Is hall call
                                 {
@@ -279,24 +282,30 @@ impl Master
                                     orders_locked.add_to_hall_queue(call_button.floor, call_button.call);
                                     println!("[MSATER]\tAdded order to hall queue: {}", call_button);
                                     
-                                    // send order list to backup
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
-                                        Ok(_) => {
-                                            // send lightmatrix to all slaves
-                                            for i in 0..locked_num_slaves {
-                                                
-                                                let light_matrix = self.make_light_matrix( i, orders_locked.clone());
-                                                locked_channels[i as usize].0.send(light_matrix).unwrap();
-                                                println!("[MASTER]\tSent light matrix to slave {}", i);
+
+                                    if self.master_to_backup_tx.is_none() {
+                                        println!("[MASTER]\tConnecting to a new backup.");
+                                        self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
+                                    }
+                                    else {                                       
+                                        match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
+                                            Ok(_) => {
+                                                // send lightmatrix to all slaves
+                                                for i in 0..locked_num_slaves { 
+                                                    let light_matrix = self.make_light_matrix( i, orders_locked.clone());
+                                                    locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                                    println!("[MASTER]\tSent light matrix to slave {}", i);
+                                                }
+                                                println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
                                             }
-                                            println!("[MASTER]\tAdded order to hall queue: {}:{}", call_button.floor, call_button.call);
-                                        }
-                                        Err(_) => {
-                                            println!("[MASTER]\tFailed to send order to backup");
-                                            println!("[MASTER]\tConnecting to a new backup.");
-                                            self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
+                                            Err(_) => {
+                                                println!("[MASTER]\tFailed to send order to backup");
+                                                self.master_to_backup_tx = None;
+                                            }
                                         }
                                     }
+
+                                    // send order list to backup
                                 }
                             }
 
@@ -307,20 +316,27 @@ impl Master
                                 
                                 orders_locked.pop_order(Order{CallButton:{call_button}, in_progress: true}, slave_number);
 
-                                // Send updated order list to backup                                
-                                match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
-                                    Ok(_) => {
-                                        for i in 0..locked_num_slaves{
-                                            let light_matrix = self.make_light_matrix(i, orders_locked.clone());
-                                            locked_channels[i as usize].0.send(light_matrix).unwrap();
-                                            println!("[MASTER]\tSent light matrix to slave {}", i);   
-                                        }                                                                     
+
+                                if self.master_to_backup_tx.is_none() {
+                                    println!("[MASTER]\tConnecting to a new backup.");
+                                    self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
+                                }
+                                else {
+                                    // Send updated order list to backup                                
+                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
+                                        Ok(_) => {
+                                            for i in 0..locked_num_slaves{
+                                                let light_matrix = self.make_light_matrix(i, orders_locked.clone());
+                                                locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                                println!("[MASTER]\tSent light matrix to slave {}", i);   
+                                            }                                                                     
+                                        }
+                                        Err(_) => {
+                                            println!("[MASTER]\tFailed to send order to backup");
+                                            self.master_to_backup_tx = None;
+                                        }
                                     }
-                                    Err(_) => {
-                                        println!("[MASTER]\tFailed to send order to backup");
-                                        println!("[MASTER]\tConnecting to a new backup.");
-                                        self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
-                                    }
+                                         
                                 }
                             }
                             
@@ -330,31 +346,37 @@ impl Master
                                 if  self.order_queues.lock().unwrap().hall_queue.len() > 0 || 
                                     self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0
                                 {
-                                    let mut orders_locked = self.order_queues.lock().unwrap();
-                                    let nxt_order = orders_locked.get_next_order(slave_number);
-                                    match nxt_order {
-                                        Some(order) => {
-                                            match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
-                                                Ok(_) => {
-                                                    let message = Message::NewOrder(nxt_order.unwrap().CallButton); 
-                                                    locked_channels[slave_number as usize].0.send(message).unwrap();
-                                                    println!("[MASTER]\t New order message sent");
-                                                }
-                                                Err(_) => {
-                                                    println!("[MASTER]\tFailed to send order to backup");
-                                                    println!("[MASTER]\tConnecting to a new backup.");
-                                                    self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
+                                    
+                                    if self.master_to_backup_tx.is_none() {
+                                        println!("[MASTER]\tConnecting to a new backup.");
+                                        self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
+                                    }
+                                    else {
+                                        let mut orders_locked = self.order_queues.lock().unwrap();
+                                        let nxt_order = orders_locked.get_next_order(slave_number);
+                                        match nxt_order {
+                                            Some(order) => {
+                                                match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
+                                                    Ok(_) => {
+                                                        let message = Message::NewOrder(nxt_order.unwrap().CallButton); 
+                                                        locked_channels[slave_number as usize].0.send(message).unwrap();
+                                                        println!("[MASTER]\t New order message sent");
+                                                    }
+                                                    Err(_) => {
+                                                        println!("[MASTER]\tFailed to send order to backup");
+                                                        println!("[MASTER]\tConnecting to a new backup.");
+                                                        self.master_to_backup_tx = None;
+                                                    }
                                                 }
                                             }
-                                        }
-                                        None => {
-                                            // Eventuellt
+                                            None => {
+                                                // Eventuellt
+                                            }
                                         }
                                     }
                                 }
                             }
-        
-                            _ => {
+                       _ => {
                                 println!("[MASTER]\tReceived unexpected message from slave {:#?}", message);
                             }
                             

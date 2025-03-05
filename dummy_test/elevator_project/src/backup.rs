@@ -17,7 +17,7 @@ pub struct Backup{
 
 impl Backup{
     pub fn init(
-        config  : &Config,
+        config           : &Config,
     ) -> Backup
     {
         println!("[BACKUP]\tInitializing backup");
