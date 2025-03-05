@@ -32,15 +32,7 @@ impl fmt::Display for Message {
         match self {
             Message::NewOrder( CallButton) => write!(f, "New Order: {}", CallButton),
             Message::OrderComplete ( CallButton) => write!(f, "Order complete: {}", CallButton),
-            Message::LightMatrix(matrix) => {
-                // Hall_UP, Hall_DOWN, CAB_CALL
-                write!(f, "HU\tHD\tCAB\n");
-                for i in 0..matrix.len() 
-                {
-                    write!(f, "{}\t{}\t{}\n", matrix[i][0], matrix[i][1], matrix[i][2]);
-                }
-                Ok(())
-            }
+            Message::LightMatrix(matrix) => write!(f, "Light matrix"),
             Message::Error(id) => write!(f, "Error: {}", id),
             Message::Backup(b) => write!(f, "Backup: {:#?}", b),
             Message::Idle(b) => write!(f, "Idle: {}", b),

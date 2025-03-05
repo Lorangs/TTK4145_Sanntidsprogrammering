@@ -44,7 +44,8 @@ pub struct MasterQueues {
 
 
 
-impl MasterQueues {
+impl MasterQueues 
+{
     pub fn init() -> MasterQueues {
         let hall_queue      : VecDeque<(Order)>    = VecDeque::new();              // (floor, button_type) for external hall calls.
         let cab_queues      : Vec<VecDeque<(Order)>>     = Vec::new();                   // 
@@ -55,7 +56,8 @@ impl MasterQueues {
         }
     }
 
-    pub fn add_to_hall_queue(&mut self, floor: u8, direction: u8) {
+    pub fn add_to_hall_queue(&mut self, floor: u8, direction: u8) 
+    {
         match direction 
         {
             0=> {
@@ -70,11 +72,33 @@ impl MasterQueues {
         }
     }
 
-    pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
+    pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) 
+    {
         self.cab_queues[slave_num as usize].push_back(Order {CallButton: tcp::CallButton { floor, call: 2 }, in_progress: false});
     }
 
-    pub fn get_next_order(&mut self, slave_num: u8) -> Option<Order> {
+    pub fn pop_order(&mut self, order: Order, slave_number: u8) 
+    {
+        if order.CallButton.call == 2 
+        {
+            self.cab_queues[slave_number as usize].pop_front();
+        }
+        else 
+        {
+            for i in 0..self.hall_queue.len() 
+            {
+                if  self.hall_queue[i].CallButton.floor == order.CallButton.floor &&
+                    self.hall_queue[i].CallButton.call  == order.CallButton.call 
+             {
+                    self.hall_queue.remove(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn get_next_order(&mut self, slave_num: u8) -> Option<Order> 
+    {
         //confirmed working
         if self.cab_queues[slave_num as usize].len() > 0 
         {
@@ -102,7 +126,8 @@ impl MasterQueues {
 }
 
 
-impl FmtDisplay for MasterQueues {
+impl FmtDisplay for MasterQueues 
+{
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f, 
@@ -277,53 +302,28 @@ impl Master
 
                             // todo: implement order complete for specific order
                             // make function pop index from queue (hall or cab at floor)
-
                             Message::OrderComplete(call_button) => {
-                                println!("[MASTER]\tRecieved OrderComplete: {}", call_button);
-                                // Remove order from Cab queue
-                                if call_button.call == 2 {
-                                    let mut orders_locked = self.order_queues.lock().unwrap();
-                                    orders_locked.cab_queues[slave_number as usize].pop_front();
-                                    print!("[MASTER]\tRemoved order from cab queue");
-                        
+                                let mut orders_locked = self.order_queues.lock().unwrap();
+                                
+                                orders_locked.pop_order(Order{CallButton:{call_button}, in_progress: true}, slave_number);
 
-                                    // Send updated order list to backup                                
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
-                                        Ok(_) => {
-                                            let light_matrix = self.make_light_matrix(slave_number, orders_locked.clone());
-                                            locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
-                                            println!("[MASTER]\tSent light matrix to slave {}", slave_number);                                                                        
-                                        }
-                                        Err(_) => {
-                                            println!("[MASTER]\tFailed to send order to backup");
-                                            println!("[MASTER]\tConnecting to a new backup.");
-                                            self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
-                                        }
+                                // Send updated order list to backup                                
+                                match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
+                                    Ok(_) => {
+                                        for i in 0..locked_num_slaves{
+                                            let light_matrix = self.make_light_matrix(i, orders_locked.clone());
+                                            locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                            println!("[MASTER]\tSent light matrix to slave {}", i);   
+                                        }                                                                     
                                     }
-                                } 
-                                else {    // Remove order from Hall queue
-                                    let mut orders_locked = self.order_queues.lock().unwrap();
-                                    orders_locked.hall_queue.pop_front();
-                                    print!("[MASTER]\tRemoved order from hall queue");
-                            
-
-                                    // Send updated order list to backup                                
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
-                                        Ok(_) => {
-                                            for i in 0..locked_num_slaves{
-                                                let light_matrix = self.make_light_matrix(i, orders_locked.clone());
-                                                locked_channels[i as usize].0.send(light_matrix).unwrap();
-                                                println!("[MASTER]\tSent light matrix to slave {}", i);   
-                                            }                                                                     
-                                        }
-                                        Err(_) => {
-                                            println!("[MASTER]\tFailed to send order to backup");
-                                            println!("[MASTER]\tConnecting to a new backup.");
-                                            self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
-                                        }
+                                    Err(_) => {
+                                        println!("[MASTER]\tFailed to send order to backup");
+                                        println!("[MASTER]\tConnecting to a new backup.");
+                                        self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
                                     }
                                 }
                             }
+                            
         
                             Message::Idle(state) => {
                                 // Send next order to slave

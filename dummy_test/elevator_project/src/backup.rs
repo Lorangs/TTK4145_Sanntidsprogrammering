@@ -85,7 +85,6 @@ fn handle_master_connection
             Ok(size) => {
                 if size > 0 {
                     let recieved: Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
-                    //println!("[BACKUP]\tRecieved message from master: {:#?}", recieved);
                     master_to_backup_tx.send(recieved).unwrap();
 
                 }
