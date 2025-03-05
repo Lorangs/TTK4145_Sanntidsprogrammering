@@ -197,18 +197,17 @@ impl Master
 
 
 
-
-    fn make_light_matrix(&self, slave_number: u8) -> tcp::Message {
+    fn make_light_matrix(&self, slave_number: u8, orders: MasterQueues) -> tcp::Message {
         // 3 x num_floors matrix for [hall up, hall down, cab] lights
         let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
-
-        for order in self.order_queues.lock().unwrap().hall_queue.iter() {
+    
+        for order in orders.hall_queue.iter() {
             new_matrix[order.CallButton.floor as usize][order.CallButton.call as usize] = true;
         }
-
-        if self.order_queues.lock().unwrap().cab_queues.len() > 0
+    
+        if orders.cab_queues.len() > 0
         {
-            self.order_queues.lock().unwrap().cab_queues[slave_number as usize].iter().for_each(|order| {
+            orders.cab_queues[slave_number as usize].iter().for_each(|order| {
                 new_matrix[order.CallButton.floor as usize][2] = true;
             });
         }
@@ -228,36 +227,40 @@ impl Master
                             Message::NewOrder(call_button) => {
                                 if call_button.call == 2     // Cab call
                                 {
-                                    self.order_queues.lock().unwrap().add_to_cab_queue(slave_number, call_button.floor);
+                                    let mut orders_locked = self.order_queues.lock().unwrap();
+                                    orders_locked.add_to_cab_queue(slave_number, call_button.floor);                                   
+                  
                                     println!("[MASTER]\tAdded order to cab queue: {}", call_button );
-                                    
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+
+                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
                                         Ok(_) => {
-                                            println!("[MASTER]\tSent order to backup");
-                                            let light_matrix = self.make_light_matrix(slave_number);
+                                            println!("test  ");
+                                            let light_matrix = self.make_light_matrix(slave_number, orders_locked.clone());
+                                            println!("test 2");
                                             locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
                                             println!("[MASTER]\tSent light matrix to slave");
                                         }
-                                        Err(_) => {
+                                        Err(_) => {    
                                             println!("[MASTER]\tFailed to send order to backup");
                                             println!("[MASTER]\tConnecting to a new backup.");
                                             self.master_to_backup_tx = connect_to_new_backup(self.config.clone());
                                         }
-                                    }
-                                                   
-                                } else // Is hall call
+                                    }                                                
+                                } 
+                                else // Is hall call
                                 {
                                     // Add order to hall queue
-                                    self.order_queues.lock().unwrap().add_to_hall_queue(call_button.floor, call_button.call);
+                                    let mut orders_locked = self.order_queues.lock().unwrap();
+                                    orders_locked.add_to_hall_queue(call_button.floor, call_button.call);
                                     println!("[MSATER]\tAdded order to hall queue: {}", call_button);
-        
+                                    
                                     // send order list to backup
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
                                         Ok(_) => {
-
-                                            // send lightmatrixx to all slaves
+                                            // send lightmatrix to all slaves
                                             for i in 0..locked_num_slaves {
-                                                let light_matrix = self.make_light_matrix(i as u8);
+                                                
+                                                let light_matrix = self.make_light_matrix( i, orders_locked.clone());
                                                 locked_channels[i as usize].0.send(light_matrix).unwrap();
                                                 println!("[MASTER]\tSent light matrix to slave {}", i);
                                             }
@@ -279,13 +282,15 @@ impl Master
                                 println!("[MASTER]\tRecieved OrderComplete: {}", call_button);
                                 // Remove order from Cab queue
                                 if call_button.call == 2 {
-                                    self.order_queues.lock().unwrap().cab_queues[slave_number as usize].pop_front();
+                                    let mut orders_locked = self.order_queues.lock().unwrap();
+                                    orders_locked.cab_queues[slave_number as usize].pop_front();
                                     print!("[MASTER]\tRemoved order from cab queue");
+                        
 
                                     // Send updated order list to backup                                
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
                                         Ok(_) => {
-                                            let light_matrix = self.make_light_matrix(slave_number);
+                                            let light_matrix = self.make_light_matrix(slave_number, orders_locked.clone());
                                             locked_channels[slave_number as usize].0.send(light_matrix).unwrap();
                                             println!("[MASTER]\tSent light matrix to slave {}", slave_number);                                                                        
                                         }
@@ -297,14 +302,16 @@ impl Master
                                     }
                                 } 
                                 else {    // Remove order from Hall queue
-                                    self.order_queues.lock().unwrap().hall_queue.pop_front();
+                                    let mut orders_locked = self.order_queues.lock().unwrap();
+                                    orders_locked.hall_queue.pop_front();
                                     print!("[MASTER]\tRemoved order from hall queue");
+                            
 
                                     // Send updated order list to backup                                
-                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                    match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
                                         Ok(_) => {
                                             for i in 0..locked_num_slaves{
-                                                let light_matrix = self.make_light_matrix(i);
+                                                let light_matrix = self.make_light_matrix(i, orders_locked.clone());
                                                 locked_channels[i as usize].0.send(light_matrix).unwrap();
                                                 println!("[MASTER]\tSent light matrix to slave {}", i);   
                                             }                                                                     
@@ -316,9 +323,6 @@ impl Master
                                         }
                                     }
                                 }
-        
-
-        
                             }
         
                             Message::Idle(state) => {
@@ -326,12 +330,12 @@ impl Master
                                 if  self.order_queues.lock().unwrap().hall_queue.len() > 0 || 
                                     self.order_queues.lock().unwrap().cab_queues[slave_number as usize].len() > 0
                                 {
-                                    let nxt_order = self.order_queues.lock().unwrap().get_next_order(slave_number);
+                                    let mut orders_locked = self.order_queues.lock().unwrap();
+                                    let nxt_order = orders_locked.get_next_order(slave_number);
                                     match nxt_order {
                                         Some(order) => {
-                                            match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(self.order_queues.lock().unwrap().clone())) {
+                                            match self.master_to_backup_tx.as_mut().unwrap().send(Message::Backup(orders_locked.clone())) {
                                                 Ok(_) => {
-                                                    println!("[MASTER]\tSent order to backup");
                                                     let message = Message::NewOrder(nxt_order.unwrap().CallButton); 
                                                     locked_channels[slave_number as usize].0.send(message).unwrap();
                                                     println!("[MASTER]\t New order message sent");
@@ -452,4 +456,5 @@ fn handle_backup_connection
         }
     }
 }
+
 
