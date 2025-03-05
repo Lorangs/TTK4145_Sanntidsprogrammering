@@ -64,8 +64,6 @@ impl Backup{
                 Err(cbc::RecvError) => {
                     println!("[BACKUP]\tMaster disconnected");
                     return self.orders.clone();
-
-
                 }
             }
         }
@@ -82,7 +80,7 @@ fn handle_master_connection
 {
     let mut encoded = [0; 1024];
     loop{
-        stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout");
+        //stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout");
         match stream.read(&mut encoded){
             Ok(size) => {
                 if size > 0 {
@@ -93,6 +91,7 @@ fn handle_master_connection
                 }
             }
             Err(e) => {
+                println!("test");
                 println!("Error: {}", e);
                 //return Err(cbc::RecvError);
             }
