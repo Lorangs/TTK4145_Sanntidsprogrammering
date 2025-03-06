@@ -11,3 +11,5 @@ fn main() {
 
     master.master_loop();
 }
+
+//Have not yet implemented that if the master fails it shoud try to start a bacup on this computer as somone else has become master
