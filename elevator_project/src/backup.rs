@@ -77,7 +77,6 @@ fn handle_master_connection(
     tcp_timeout_ms: u64, // Not used. Need to bee a Duration to be passed to stream.set_read_timeout()
 ) //-> Result<(), cbc::RecvError>
 {
-
     let mut encoded = [0; 1024];
     loop {
         //stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout");

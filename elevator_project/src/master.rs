@@ -11,7 +11,7 @@ use std::thread::spawn;
 use std::time::Duration;
 
 use crate::config::Config;
-use crate::tcp::{self, Message, CallButton};
+use crate::tcp::{self, CallButton, Message};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct Order {
@@ -76,7 +76,7 @@ impl MasterQueues {
     }
 
     pub fn pop_order(&mut self, order: Order, slave_number: u8) {
-        if order.call_button .call == 2 {
+        if order.call_button.call == 2 {
             self.cab_queues[slave_number as usize].pop_front();
         } else {
             for i in 0..self.hall_queue.len() {
@@ -90,8 +90,9 @@ impl MasterQueues {
         }
     }
 
+    // Simple algorithm for getting the next order. Works for testing purposes, but need to implement more sophisticated version. 
     pub fn get_next_order(&mut self, slave_num: u8) -> Option<Order> {
-        //confirmed working
+        //Confirmed working
         if self.cab_queues[slave_num as usize].len() > 0 {
             let mut order = *self.cab_queues[slave_num as usize].front().unwrap();
             order.in_progress = true;
@@ -106,11 +107,12 @@ impl MasterQueues {
                 }
             }
 
-            //den kjem hit vist alle orders er i progress
+            //If all orders are in progress
             return None;
         }
     }
 }
+
 
 impl FmtDisplay for MasterQueues {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
@@ -126,21 +128,16 @@ impl FmtDisplay for MasterQueues {
 // Master implementation
 #[derive(Debug)]
 pub struct Master {
-    pub config: Config,                         // Config struct
-    slaves_ip: Vec<String>,                     // Vector of slaves IP addresses
-    pub order_queues: Arc<Mutex<MasterQueues>>, // Vector of slaves order queues
-    //incoming_clients_rx     : cbc::Receiver<TcpStream>,                                 // Incoming connections
-    slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>, // Vector of slave channels. Sygt som fy
-    num_slaves: Arc<Mutex<u8>>, // Variable for number of slaves in operation
+    pub config: Config,                                                                     // Config struct
+    slaves_ip: Vec<String>,                                                                 // Vector of slaves IP addresses
+    pub order_queues: Arc<Mutex<MasterQueues>>,                                             // Vector of slaves order queues
+    slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,        // Vector of slave channels. Sygt som fy
+    num_slaves: Arc<Mutex<u8>>,                                                             // Variable for number of slaves in operation
     master_to_backup_tx: Option<cbc::Sender<Message>>,
 }
 
 impl Master {
-    pub fn init(
-        config: &Config,
-        master_queue: MasterQueues,
-    ) -> Result<Master, String> {
-
+    pub fn init(config: &Config, master_queue: MasterQueues) -> Result<Master, String> {
         // Thread for listening for new slave connections
         //let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
         let slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
@@ -198,6 +195,7 @@ impl Master {
                     }
                     Err(e) => {
                         eprintln!("[MASTER]\tFailed to establish connection to slave: {}", e);
+                        todo!();
                     }
                 }
             }
@@ -206,8 +204,8 @@ impl Master {
         Ok(master)
     }
 
+    // 3 x num_floors matrix for [hall up, hall down, cab] lights
     fn make_light_matrix(&self, slave_number: u8, orders: MasterQueues) -> tcp::Message {
-        // 3 x num_floors matrix for [hall up, hall down, cab] lights
         let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
 
         for order in orders.hall_queue.iter() {
@@ -370,6 +368,7 @@ impl Master {
                                         Err(_) => {
                                             println!("[MASTER]\tFailed to send order to backup");
                                             self.master_to_backup_tx = None;
+                                            todo!();
                                         }
                                     }
                                 }
@@ -416,11 +415,12 @@ impl Master {
                                                             "[MASTER]\tConnecting to a new backup."
                                                         );
                                                         self.master_to_backup_tx = None;
+                                                        todo!();
                                                     }
                                                 }
                                             }
                                             None => {
-                                                // Eventuellt
+                                                todo!();
                                             }
                                         }
                                     }
@@ -431,11 +431,13 @@ impl Master {
                                     "[MASTER]\tReceived unexpected message from slave {:#?}",
                                     message
                                 );
+                                todo!();
                             }
                         }
                     }
                     Err(_) => {
                         //println!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                        todo!();
                     }
                 }
             }
@@ -469,6 +471,7 @@ fn connect_to_new_backup(config: Config) -> Option<cbc::Sender<tcp::Message>> {
                     "[MASTER]\tFailed to connect to backup at {}: {}",
                     backup_ip, e
                 );
+                todo!();
             }
         }
     }
@@ -522,8 +525,6 @@ fn handle_backup_connection(
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
 ) {
     loop {
-        //stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
-
         match master_to_backup_rx.recv() {
             Ok(message) => {
                 let encoded =
