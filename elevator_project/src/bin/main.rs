@@ -2,6 +2,7 @@ use std::process::Command;
 use std::thread::sleep;
 
 fn main() {
+    //The plan is to make a program here that we can run when starting the computer, but we have not used it much yet
     Command::new("cargo")
         .args(["run", "--bin", "master_main"])
         .spawn()
