@@ -2,7 +2,7 @@
 
 ## Design philosophy
 The elevator system is design as a master-slave system with backup. The master handles all the incoming orders and distributes them to
-the slaves. The slaves is following orders as long as they are connected to the master, and is kept as simple as possible. The backup is a copy of the part of the master that handles the orders, without the part that communicate with the slaves. A new master is created with tha data from the backup in case the master fails. 
+the slaves. The slaves is following orders as long as they are connected to the master, and is kept as simple as possible. The backup onely resives data from the master, and can create a new master with tha data in case the master fails. 
 
 The software is designed to use as few exxternal libraryes as possible, exept from the channel library crossbeam and the serialisation/deserialisation library serde. This to ceep the code as simple and meintainable as possible.
 
