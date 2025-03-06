@@ -20,7 +20,7 @@ impl fmt::Display for CallButton {
 pub enum Message {
     NewOrder(CallButton),
     OrderComplete(CallButton),
-    LightMatrix(Vec<[bool; 3]>), // Hall_UP, Hall_DOWN, CAB_CALL for each floor
+    LightMatrix(Vec<[bool; 3]>), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
     Error(ErrorState),
     Backup(MasterQueues),
     Idle(bool),
