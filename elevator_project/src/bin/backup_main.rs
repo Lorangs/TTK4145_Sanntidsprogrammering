@@ -1,7 +1,4 @@
-#![allow(warnings)]
-
 use elevator_project::{backup::Backup, config::Config, master::Master};
-use std::env;
 use std::path::Path;
 
 fn main() {
@@ -10,8 +7,8 @@ fn main() {
 
     loop {
         let mut backup = Backup::init(&config);
-        let mut masterqueues = backup.backup_loop();
-        let mut master = Master::init(&config, &backup_ip, masterqueues).unwrap();
+        let masterqueues = backup.backup_loop();
+        let mut master = Master::init(&config, masterqueues).unwrap();
         master.master_loop();
     }
 }

@@ -1,15 +1,14 @@
 use crossbeam_channel as cbc;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
 use crate::config::Config;
 use crate::master::MasterQueues;
-use crate::tcp::{self, Message};
+use crate::tcp::Message;
 
 pub struct Backup {
-    config: Config,
     orders: MasterQueues,
     master_to_backup_rx: cbc::Receiver<Message>,
 }
@@ -31,7 +30,6 @@ impl Backup {
                             cbc::unbounded::<Message>();
 
                         let backup = Backup {
-                            config: config.clone(),
                             orders: MasterQueues::init(),
                             master_to_backup_rx: master_to_backup_rx,
                         };
@@ -76,9 +74,10 @@ impl Backup {
 fn handle_master_connection(
     mut stream: TcpStream,
     master_to_backup_tx: cbc::Sender<Message>,
-    tcp_timeout_ms: u64,
+    tcp_timeout_ms: u64, // Not used. Need to bee a Duration to be passed to stream.set_read_timeout()
 ) //-> Result<(), cbc::RecvError>
 {
+
     let mut encoded = [0; 1024];
     loop {
         //stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout");
@@ -92,7 +91,7 @@ fn handle_master_connection(
             }
             Err(e) => {
                 println!("Error: {}", e);
-                //return Err(cbc::RecvError);
+                todo!();
             }
         }
     }

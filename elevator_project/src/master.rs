@@ -1,31 +1,21 @@
-#![allow(warnings)]
-
-use bincode::config;
-use core::num;
 use crossbeam_channel as cbc;
-use driver_rust::elevio::elev::DIRN_STOP;
-use driver_rust::elevio::poll::CallButton;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fmt;
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use std::net::{Incoming, SocketAddr, TcpListener, TcpStream};
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::string::String;
 use std::sync::{Arc, Mutex};
-use std::thread::{sleep, spawn, Builder};
+use std::thread::spawn;
 use std::time::Duration;
 
-use driver_rust::elevio as e;
-
 use crate::config::Config;
-use crate::inputs::{self, listen_for_new_connection};
-use crate::slave;
-use crate::tcp::{self, Message};
+use crate::tcp::{self, Message, CallButton};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct Order {
-    CallButton: tcp::CallButton,
+    call_button: tcp::CallButton,
     in_progress: bool,
 }
 
@@ -34,21 +24,21 @@ impl fmt::Display for Order {
         write!(
             f,
             "Order: {}, progress: {}",
-            self.CallButton, self.in_progress
+            self.call_button, self.in_progress
         )
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
-    pub hall_queue: VecDeque<(Order)>, // (floor, button_type) for external hall calls.
-    pub cab_queues: Vec<VecDeque<(Order)>>, // Vector of slave queues for internal cab calls.  ref driver_rust::elevio::poll::CallButton
+    pub hall_queue: VecDeque<Order>, // (floor, button_type) for external hall calls.
+    pub cab_queues: Vec<VecDeque<Order>>, // Vector of slave queues for internal cab calls.  ref driver_rust::elevio::poll::CallButton
 }
 
 impl MasterQueues {
     pub fn init() -> MasterQueues {
-        let hall_queue: VecDeque<(Order)> = VecDeque::new(); // (floor, button_type) for external hall calls.
-        let cab_queues: Vec<VecDeque<(Order)>> = Vec::new(); //
+        let hall_queue: VecDeque<Order> = VecDeque::new(); // (floor, button_type) for external hall calls.
+        let cab_queues: Vec<VecDeque<Order>> = Vec::new(); //
 
         MasterQueues {
             hall_queue,
@@ -61,14 +51,14 @@ impl MasterQueues {
             0 => {
                 // Direction Up
                 self.hall_queue.push_back(Order {
-                    CallButton: tcp::CallButton { floor, call: 0 },
+                    call_button: CallButton { floor, call: 0 },
                     in_progress: false,
                 });
             }
             1 => {
                 // Direction Down
                 self.hall_queue.push_back(Order {
-                    CallButton: tcp::CallButton { floor, call: 1 },
+                    call_button: CallButton { floor, call: 1 },
                     in_progress: false,
                 });
             }
@@ -80,18 +70,18 @@ impl MasterQueues {
 
     pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
         self.cab_queues[slave_num as usize].push_back(Order {
-            CallButton: tcp::CallButton { floor, call: 2 },
+            call_button: CallButton { floor, call: 2 },
             in_progress: false,
         });
     }
 
     pub fn pop_order(&mut self, order: Order, slave_number: u8) {
-        if order.CallButton.call == 2 {
+        if order.call_button .call == 2 {
             self.cab_queues[slave_number as usize].pop_front();
         } else {
             for i in 0..self.hall_queue.len() {
-                if self.hall_queue[i].CallButton.floor == order.CallButton.floor
-                    && self.hall_queue[i].CallButton.call == order.CallButton.call
+                if self.hall_queue[i].call_button.floor == order.call_button.floor
+                    && self.hall_queue[i].call_button.call == order.call_button.call
                 {
                     self.hall_queue.remove(i);
                     break;
@@ -148,28 +138,24 @@ pub struct Master {
 impl Master {
     pub fn init(
         config: &Config,
-        master_ip: &String,
         master_queue: MasterQueues,
     ) -> Result<Master, String> {
-        let conf: Config = config.clone();
 
         // Thread for listening for new slave connections
         //let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
-        let mut slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
+        let slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
             Arc::new(Mutex::new(Vec::new()));
 
-        let mut master = Master {
+        let master = Master {
             config: config.clone(),
             slaves_ip: config.elevator_ip_list.clone(),
             order_queues: Arc::new(Mutex::new(master_queue)),
-            //incoming_clients_rx     : incoming_conn_rx,
             slave_channels: slave_channels,
             num_slaves: Arc::new(Mutex::new(0)),
             master_to_backup_tx: connect_to_new_backup(config.clone()),
         };
 
         // find an avaliable backup to connect to
-
         let master_port = config.master_port;
         let order_queues_clone: Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
         let slave_channels_clone: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
@@ -225,14 +211,14 @@ impl Master {
         let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
 
         for order in orders.hall_queue.iter() {
-            new_matrix[order.CallButton.floor as usize][order.CallButton.call as usize] = true;
+            new_matrix[order.call_button.floor as usize][order.call_button.call as usize] = true;
         }
 
         if orders.cab_queues.len() > 0 {
             orders.cab_queues[slave_number as usize]
                 .iter()
                 .for_each(|order| {
-                    new_matrix[order.CallButton.floor as usize][2] = true;
+                    new_matrix[order.call_button.floor as usize][2] = true;
                 });
         }
         Message::LightMatrix(new_matrix)
@@ -240,9 +226,9 @@ impl Master {
 
     pub fn master_loop(&mut self) {
         loop {
-            let mut locked_num_slaves = *self.num_slaves.lock().unwrap();
+            let locked_num_slaves = *self.num_slaves.lock().unwrap();
             for slave_number in 0..locked_num_slaves {
-                let mut locked_channels = self.slave_channels.lock().unwrap();
+                let locked_channels = self.slave_channels.lock().unwrap();
                 match locked_channels[slave_number as usize].1.try_recv() {
                     Ok(message) => {
                         match message {
@@ -349,7 +335,7 @@ impl Master {
 
                                 orders_locked.pop_order(
                                     Order {
-                                        CallButton: { call_button },
+                                        call_button: { call_button },
                                         in_progress: true,
                                     },
                                     slave_number,
@@ -414,7 +400,7 @@ impl Master {
                                                 {
                                                     Ok(_) => {
                                                         let message = Message::NewOrder(
-                                                            nxt_order.unwrap().CallButton,
+                                                            nxt_order.unwrap().call_button,
                                                         );
                                                         locked_channels[slave_number as usize]
                                                             .0
@@ -454,7 +440,7 @@ impl Master {
                 }
             }
 
-            // Optional: Add a very small sleep to avoid consuming 100% CPU
+            //Add a very small sleep to avoid consuming 100% CPU
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
@@ -510,9 +496,9 @@ fn handle_slave_connection(
                     slave_to_master_tx.send(recieved).unwrap();
                 }
             }
-            Err(e) => {
+            Err(_) => {
                 //eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e)
-                // Handle error here
+                todo!();
             }
         }
 
@@ -525,6 +511,7 @@ fn handle_slave_connection(
             }
             Err(_) => {
                 //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                todo!();
             }
         }
     }
@@ -534,7 +521,6 @@ fn handle_backup_connection(
     mut stream: TcpStream,
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
 ) {
-    let mut buffer = [0; 1024];
     loop {
         //stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
 
@@ -547,6 +533,7 @@ fn handle_backup_connection(
             }
             Err(_) => {
                 //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                todo!();
             }
         }
     }

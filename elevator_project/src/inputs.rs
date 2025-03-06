@@ -1,9 +1,7 @@
-#![allow(warnings)]
-
 use crossbeam_channel as cbc;
 use driver_rust::elevio::{self};
 use std::fmt;
-use std::io::{Error as ioError, Read, Result};
+use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;

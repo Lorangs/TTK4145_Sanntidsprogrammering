@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 pub mod backup;
 pub mod config;
 pub mod inputs;

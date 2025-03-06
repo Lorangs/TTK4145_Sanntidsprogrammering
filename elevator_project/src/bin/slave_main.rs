@@ -1,10 +1,7 @@
-#![allow(warnings)]
-
 use elevator_project::config::Config;
 use elevator_project::slave::Slave;
 use std::env;
 use std::path::Path;
-use std::thread::spawn;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

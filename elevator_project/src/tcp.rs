@@ -28,9 +28,9 @@ pub enum Message {
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Message::NewOrder(CallButton) => write!(f, "New Order: {}", CallButton),
-            Message::OrderComplete(CallButton) => write!(f, "Order complete: {}", CallButton),
-            Message::LightMatrix(matrix) => write!(f, "Light matrix"),
+            Message::NewOrder(call_button) => write!(f, "New Order: {}", call_button),
+            Message::OrderComplete(call_button) => write!(f, "Order complete: {}", call_button),
+            Message::LightMatrix(matrix) => write!(f, "Light matrix: {:#?}", matrix),
             Message::Error(id) => write!(f, "Error: {}", id),
             Message::Backup(b) => write!(f, "Backup: {:#?}", b),
             Message::Idle(b) => write!(f, "Idle: {}", b),

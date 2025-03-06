@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use std::process::Command;
 use std::thread::sleep;
 

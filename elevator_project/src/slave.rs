@@ -1,16 +1,10 @@
-#![allow(warnings)]
-
-use driver_rust::elevio;
 use driver_rust::elevio::elev as e;
 
 use bincode;
 use crossbeam_channel as cbc;
-use driver_rust::elevio::poll::CallButton;
-
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::io::{prelude, Result, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::str::FromStr;
+use std::io::{Result, Write};
+use std::net::TcpStream;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
