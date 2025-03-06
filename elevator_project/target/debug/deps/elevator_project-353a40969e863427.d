@@ -1,10 +1,11 @@
-/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/elevator_project/target/debug/deps/libelevator_project-353a40969e863427.rmeta: src/lib.rs src/config.rs src/master.rs src/slave.rs src/inputs.rs src/tcp.rs
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/dummy_test/elevator_project/target/debug/deps/libelevator_project-353a40969e863427.rmeta: src/lib.rs src/config.rs src/master.rs src/slave.rs src/inputs.rs src/backup.rs src/tcp.rs
 
-/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/elevator_project/target/debug/deps/elevator_project-353a40969e863427.d: src/lib.rs src/config.rs src/master.rs src/slave.rs src/inputs.rs src/tcp.rs
+/home/lorang/ntnu/6_semester/TTK4145_sanntidsprogrammering/TTK4145_Sanntidsprogrammering/dummy_test/elevator_project/target/debug/deps/elevator_project-353a40969e863427.d: src/lib.rs src/config.rs src/master.rs src/slave.rs src/inputs.rs src/backup.rs src/tcp.rs
 
 src/lib.rs:
 src/config.rs:
 src/master.rs:
 src/slave.rs:
 src/inputs.rs:
+src/backup.rs:
 src/tcp.rs:

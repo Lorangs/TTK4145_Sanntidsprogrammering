@@ -1,23 +1,31 @@
-use crossbeam_channel as cbc;
-use std::fmt;
-use std::thread::{spawn, sleep};
-use std::time::Duration;
-use std::net::{TcpStream, TcpListener};
-use std::io::{Error as ioError, Read, Result};  
-use driver_rust::elevio::{self};
+#![allow(warnings)]
 
-use crate::{slave, config, tcp};
+use crossbeam_channel as cbc;
+use driver_rust::elevio::{self};
+use std::fmt;
+use std::io::{Error as ioError, Read, Result};
+use std::net::{TcpListener, TcpStream};
+use std::thread::{sleep, spawn};
+use std::time::Duration;
+
+//use crate::config;
+//use crate::slave;
+use crate::tcp;
 
 #[derive(Debug, Clone)]
 pub struct SlaveChannels {
-    pub floor_sensor_rx     : cbc::Receiver<u8>,
-    pub call_button_rx      : cbc::Receiver<elevio::poll::CallButton>,
-    pub stop_button_rx      : cbc::Receiver<bool>, 
-    pub obstruction_rx      : cbc::Receiver<bool>,
-    pub master_message_rx   : cbc::Receiver<tcp::Message>,
+    pub floor_sensor_rx: cbc::Receiver<u8>,
+    pub call_button_rx: cbc::Receiver<elevio::poll::CallButton>,
+    pub stop_button_rx: cbc::Receiver<bool>,
+    pub obstruction_rx: cbc::Receiver<bool>,
+    pub master_message_rx: cbc::Receiver<tcp::Message>,
 }
 
-pub fn spawn_threads_for_slave_inputs(elevator: &elevio::elev::Elevator, input_poll_rate_ms: u64, master_socket: &TcpStream) -> SlaveChannels {
+pub fn spawn_threads_for_slave_inputs(
+    elevator: &elevio::elev::Elevator,
+    input_poll_rate_ms: u64,
+    master_socket: &TcpStream,
+) -> SlaveChannels {
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
 
     let (call_button_tx, call_button_rx) = cbc::unbounded::<elevio::poll::CallButton>();
@@ -44,25 +52,26 @@ pub fn spawn_threads_for_slave_inputs(elevator: &elevio::elev::Elevator, input_p
         spawn(move || elevio::poll::obstruction(elevator, obstruction_tx, poll_period));
     }
 
-    let mut master_socket_clone = master_socket.try_clone().expect("Failed to clone socket"); 
+    let mut master_socket_clone = master_socket.try_clone().expect("Failed to clone socket");
     let (master_message_tx, master_message_rx) = cbc::unbounded::<tcp::Message>();
     spawn(move || {
         let mut encoded = [0; 1024];
-        loop{
+        loop {
             match master_socket_clone.read(&mut encoded) {
                 Ok(size) => {
                     if size > 0 {
-                        let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                        let message: tcp::Message =
+                            bincode::deserialize(&encoded).expect("Failed to deserialize message");
                         println!("[SLAVE]\tReceived message from master: {:#?}", message);
                         master_message_tx.send(message).unwrap();
                     }
                 }
                 Err(e) => {
                     println!("[SLAVE]\tFailed to read from stream: {}", e);
-                    continue;               // TODO: Sjekk om dette er riktig
-                    // return e;
+                    continue; // TODO: Sjekk om dette er riktig
+                              // return e;
                 }
-            }            
+            }
             sleep(poll_period);
         }
     });
@@ -96,24 +105,20 @@ impl fmt::Display for SlaveChannels {
     }
 }
 
-
-/* ****************************************************************************************************************** */
-
+/******************************************************************************************************************* */
 
 #[derive(Debug, Clone)]
 pub struct MasterChannels {
-
-    pub slave_vector_rx         : Vec<cbc::Receiver<tcp::Message>>,
-    pub backup_rx               : cbc::Receiver<tcp::Message>,
-
+    pub slave_vector_rx: Vec<cbc::Receiver<tcp::Message>>,
+    pub backup_rx: cbc::Receiver<tcp::Message>,
 }
 
-
 // se på returntype av denne funksjonen
-// Bør test om listner.incomig må kjøres i loop for å motta nye tilkoblinger. 
+// Bør test om listner.incomig må kjøres i loop for å motta nye tilkoblinger.
 pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
-    let listener  = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
-
+    let listener = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
+    //let listener  = TcpListener::bind("0.0.0.0:4000").expect("Failed to bind");
+    println!("Listening for new connection\n");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -126,31 +131,34 @@ pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
             }
         }
     }
-    None       
+    None
 }
-    
 
-// TODO: Implement this function and rename 
-pub fn master_read_from_clients(mut stream: TcpStream, input_poll_rate_ms: u64) -> cbc::Receiver<tcp::Message> {
+// TODO: Implement this function and rename
+pub fn master_read_from_clients(
+    mut stream: TcpStream,
+    input_poll_rate_ms: u64,
+) -> cbc::Receiver<tcp::Message> {
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
-    
+
     let (tx, rx) = cbc::unbounded::<tcp::Message>();
-    spawn( move || {
+    spawn(move || {
         let mut encoded = [0; 1024];
-        loop{
+        loop {
             match stream.read(&mut encoded) {
                 Ok(size) => {
                     if size > 0 {
-                        let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                        let message: tcp::Message =
+                            bincode::deserialize(&encoded).expect("Failed to deserialize message");
                         println!("[MASTER]\tReceived message from client: {:#?}", message);
                         tx.send(message).unwrap();
                     }
                 }
                 Err(e) => {
                     println!("[MASTER]\tFailed to read from tcp-stream: {}", e);
-                    continue;               // TODO: Sjekk om dette er riktig. Kanskje må returnere feil for å vise at Tcp streamen er brutt
+                    continue; // TODO: Sjekk om dette er riktig. Kanskje må returnere feil for å vise at Tcp streamen er brutt
                 }
-            }            
+            }
             sleep(poll_period);
         }
     });
@@ -158,22 +166,16 @@ pub fn master_read_from_clients(mut stream: TcpStream, input_poll_rate_ms: u64) 
 }
 
 // pub fn spawn_threads_for_master_inputs(input_poll_rate_ms: u64, number_of_slaves: u8) -> MasterChannels {
-//     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);  
+//     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
 
 //     // slave_vec_rx is a vector of receivers, one for each slave
 //     let mut vector_slave_rx: Vec<cbc::Receiver<tcp::Message>> = Vec::new();
 //     for _ in 0..number_of_slaves {
 
 //     }
-        
-        
+
 //         vector_slave_rx.push(slave_rx);
-        
 
-
-
-    
 //     let (backup_tx, backup_rx) = cbc::unbounded::<tcp::Message>();
 
 // }
-

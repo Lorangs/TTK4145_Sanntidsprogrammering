@@ -1,30 +1,39 @@
 // This file contains the TCP module, which is responsible for handling the TCP connection between the elevator and the scheduler.
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use serde::{Serialize, Deserialize};
 
-/* Button_type from driver_rust:
-pub const HALL_UP   : u8 = 0;
-pub const HALL_DOWN : u8 = 1;
-pub const CAB       : u8 = 2;
- */
+use crate::master::MasterQueues;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum Message{
-    NewOrder(u8, u8),           // Floor, Button_type
-    OrderComplete,                    
-    ConnectionTest,
-    Error(ErrorState),
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub struct CallButton {
+    pub floor: u8,
+    pub call: u8, // 0: UP, 1: DOWN, 2: CAB
 }
 
-
+impl fmt::Display for CallButton {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Floor: {}, Call: {}", self.floor, self.call)
+    }
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Message {
+    NewOrder(CallButton),
+    OrderComplete(CallButton),
+    LightMatrix(Vec<[bool; 3]>), // Hall_UP, Hall_DOWN, CAB_CALL for each floor
+    Error(ErrorState),
+    Backup(MasterQueues),
+    Idle(bool),
+}
 
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Message::NewOrder(floor, button_type) => write!(f, "New Order:\nFloor:\t{}\nCall:\t{}", floor, button_type),
-            Message::OrderComplete => write!(f, "Order complete."),
-            Message::ConnectionTest => write!(f, "Connection test."),
+            Message::NewOrder(CallButton) => write!(f, "New Order: {}", CallButton),
+            Message::OrderComplete(CallButton) => write!(f, "Order complete: {}", CallButton),
+            Message::LightMatrix(matrix) => write!(f, "Light matrix"),
             Message::Error(id) => write!(f, "Error: {}", id),
+            Message::Backup(b) => write!(f, "Backup: {:#?}", b),
+            Message::Idle(b) => write!(f, "Idle: {}", b),
         }
     }
 }
