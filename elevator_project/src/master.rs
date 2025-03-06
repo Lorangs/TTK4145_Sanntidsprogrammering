@@ -1,4 +1,5 @@
 use crossbeam_channel as cbc;
+use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fmt;
@@ -12,6 +13,8 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::tcp::{self, CallButton, Message};
+
+
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct Order {
@@ -31,14 +34,14 @@ impl fmt::Display for Order {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
-    pub hall_queue: VecDeque<Order>, // (floor, button_type) for external hall calls.
-    pub cab_queues: Vec<VecDeque<Order>>, // Vector of slave queues for internal cab calls.  ref driver_rust::elevio::poll::CallButton
+    pub hall_queue: VecDeque<Order>, 
+    pub cab_queues: Vec<VecDeque<Order>>, // Vector of slave queues for internal cab calls. 
 }
 
 impl MasterQueues {
     pub fn init() -> MasterQueues {
-        let hall_queue: VecDeque<Order> = VecDeque::new(); // (floor, button_type) for external hall calls.
-        let cab_queues: Vec<VecDeque<Order>> = Vec::new(); //
+        let hall_queue: VecDeque<Order> = VecDeque::new(); 
+        let cab_queues: Vec<VecDeque<Order>> = Vec::new(); 
 
         MasterQueues {
             hall_queue,
@@ -48,22 +51,21 @@ impl MasterQueues {
 
     pub fn add_to_hall_queue(&mut self, floor: u8, direction: u8) {
         match direction {
-            0 => {
-                // Direction Up
+            HALL_UP => {
                 self.hall_queue.push_back(Order {
-                    call_button: CallButton { floor, call: 0 },
+                    call_button: CallButton { floor, call: HALL_DOWN },
                     in_progress: false,
                 });
             }
-            1 => {
-                // Direction Down
+            HALL_DOWN => {
                 self.hall_queue.push_back(Order {
-                    call_button: CallButton { floor, call: 1 },
+                    call_button: CallButton { floor, call: HALL_DOWN },
                     in_progress: false,
                 });
             }
             _ => {
                 eprintln!("[MASTER]\tInvalid direction: {}", direction);
+                todo!();
             }
         }
     }

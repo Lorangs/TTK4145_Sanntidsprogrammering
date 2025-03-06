@@ -14,11 +14,11 @@ pub struct Backup {
 }
 
 impl Backup {
+    // Loops unitl it connects to a master
     pub fn init(config: &Config) -> Backup {
         println!("[BACKUP]\tInitializing backup");
 
         loop {
-            // loops unitl it connects to a master
             let listener: TcpListener =
                 TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string())
                     .expect("Failed to bind");
