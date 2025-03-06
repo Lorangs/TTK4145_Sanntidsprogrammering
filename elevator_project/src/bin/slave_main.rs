@@ -17,3 +17,5 @@ fn main() {
 
     slave.slave_loop();
 }
+
+//TODO try to restart slave if it crashes
