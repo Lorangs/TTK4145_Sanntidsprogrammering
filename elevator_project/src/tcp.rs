@@ -15,6 +15,7 @@ impl fmt::Display for CallButton {
         write!(f, "Floor: {}, Call: {}", self.floor, self.call)
     }
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
     NewOrder(CallButton),

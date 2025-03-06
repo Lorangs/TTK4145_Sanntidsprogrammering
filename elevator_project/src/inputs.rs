@@ -6,10 +6,9 @@ use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
-//use crate::config;
-//use crate::slave;
 use crate::tcp;
 
+// Struct containing all the rx channels from the elevator io driver. 
 #[derive(Debug, Clone)]
 pub struct SlaveChannels {
     pub floor_sensor_rx: cbc::Receiver<u8>,
@@ -19,6 +18,7 @@ pub struct SlaveChannels {
     pub master_message_rx: cbc::Receiver<tcp::Message>,
 }
 
+// Spawns threads for all the slave input channels and returns a SlaveChannels struct. 
 pub fn spawn_threads_for_slave_inputs(
     elevator: &elevio::elev::Elevator,
     input_poll_rate_ms: u64,
@@ -83,6 +83,7 @@ pub fn spawn_threads_for_slave_inputs(
     }
 }
 
+
 impl fmt::Display for SlaveChannels {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -103,7 +104,8 @@ impl fmt::Display for SlaveChannels {
     }
 }
 
-/******************************************************************************************************************* */
+/********************************************************************************************************************/
+
 
 #[derive(Debug, Clone)]
 pub struct MasterChannels {
@@ -111,11 +113,10 @@ pub struct MasterChannels {
     pub backup_rx: cbc::Receiver<tcp::Message>,
 }
 
-// se på returntype av denne funksjonen
-// Bør test om listner.incomig må kjøres i loop for å motta nye tilkoblinger.
+//Listen for new slave connections. Is runned in separate thread.
+// Need error handling
 pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
     let listener = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
-    //let listener  = TcpListener::bind("0.0.0.0:4000").expect("Failed to bind");
     println!("Listening for new connection\n");
     for stream in listener.incoming() {
         match stream {
@@ -132,7 +133,8 @@ pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
     None
 }
 
-// TODO: Implement this function and rename
+
+//Not used anywher. Under development or not needed?
 pub fn master_read_from_clients(
     mut stream: TcpStream,
     input_poll_rate_ms: u64,
@@ -154,7 +156,7 @@ pub fn master_read_from_clients(
                 }
                 Err(e) => {
                     println!("[MASTER]\tFailed to read from tcp-stream: {}", e);
-                    continue; // TODO: Sjekk om dette er riktig. Kanskje må returnere feil for å vise at Tcp streamen er brutt
+                    continue; // TODO: Check if this is correct. Maybe need to return something to scheck if the connection is lost. 
                 }
             }
             sleep(poll_period);
@@ -163,17 +165,4 @@ pub fn master_read_from_clients(
     rx
 }
 
-// pub fn spawn_threads_for_master_inputs(input_poll_rate_ms: u64, number_of_slaves: u8) -> MasterChannels {
-//     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
 
-//     // slave_vec_rx is a vector of receivers, one for each slave
-//     let mut vector_slave_rx: Vec<cbc::Receiver<tcp::Message>> = Vec::new();
-//     for _ in 0..number_of_slaves {
-
-//     }
-
-//         vector_slave_rx.push(slave_rx);
-
-//     let (backup_tx, backup_rx) = cbc::unbounded::<tcp::Message>();
-
-// }

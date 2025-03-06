@@ -50,6 +50,8 @@ impl Backup {
         }
     }
 
+    // Updates backup orders and returns them if master disconnects
+    // Ned to handle the case where the backup recieves a message but dont update the orders. May need to be handles in both backup and master.
     pub fn backup_loop(&mut self) -> MasterQueues {
         loop {
             match self.master_to_backup_rx.recv() {
@@ -71,6 +73,8 @@ impl Backup {
     }
 }
 
+
+// Handles incoming messages from master. 
 fn handle_master_connection(
     mut stream: TcpStream,
     master_to_backup_tx: cbc::Sender<Message>,

@@ -1,5 +1,4 @@
 use driver_rust::elevio::elev as e;
-
 use bincode;
 use crossbeam_channel as cbc;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -27,7 +26,7 @@ pub enum ElevatorBehaviour {
     OutOfOrder,
 }
 
-// TODO: Kanskje en socket tilknyttet matster må være medlemsvariabel?
+// TODO: Maybe socket related to master should be a member variable?
 #[derive(Debug)]
 pub struct Slave {
     pub config: Config,
@@ -49,7 +48,7 @@ impl Slave {
         let elev: e::Elevator = e::Elevator::init(&slave_addr, config.number_of_floors)
             .expect("Failed to initialize elevator");
 
-        // TODO : Implementere master_ip og master_socket slik at den er variabel
+        // TODO : Implement way to change master_ip and slave_ip dynamically. 
         let master_ip: String =
             config.elevator_ip_list[0].clone().to_string() + ":" + &config.master_port.to_string();
         let master_sckt: TcpStream =
@@ -103,6 +102,7 @@ impl Slave {
         return slave;
     }
 
+    // Poll light information from dirver and update light_matrix
     pub fn sync_lights(&self) {
         println!("Syncing lights");
         for (floor_index, light_array) in self.light_matrix.iter().enumerate() {
@@ -116,7 +116,7 @@ impl Slave {
         }
     }
 
-    // Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel
+    // Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel when done. 
     pub fn start_door_timer(&self, duration: Duration) {
         let tx = self.door_timer.0.clone();
         spawn(move || {
@@ -166,8 +166,8 @@ impl Slave {
         }
     }
 
-    // velger retning basert på neste ordre
-    // TODO: fullfør denne funksjonen
+    // Choose direction based on next order and start moving. 
+    // TODO: Is this completed?
     pub fn start_moving(&mut self) {
         if self.behaviour == ElevatorBehaviour::DoorOpen
             || self.behaviour == ElevatorBehaviour::OutOfOrder
@@ -193,6 +193,8 @@ impl Slave {
         }
     }
 
+
+    // State machine for the slave elevator
     pub fn slave_loop(&mut self) {
         loop {
             if self.behaviour == ElevatorBehaviour::Idle {
@@ -215,11 +217,10 @@ impl Slave {
                                 self.elevator.motor_direction(e::DIRN_STOP);
                                 self.behaviour = ElevatorBehaviour::DoorOpen;
                                 self.elevator.door_light(true);
-                                self.start_door_timer(Duration::from_secs(3));                // starting doortimer
-                                // self.send_order_complete();                                   // Send order complete message to master   TEST om denne hører hjemme i doortimer
+                                self.start_door_timer(Duration::from_secs(3));                
                             }
                         },
-                        _ => {},                                                              // Hvis heisen ikke er i bevegelse, gjør ingenting
+                        _ => {},    // Hvis heisen ikke er i bevegelse, gjør ingenting
                     }
                 }
 
@@ -230,7 +231,7 @@ impl Slave {
 
                     println!("[SLAVE]\t\tReceived call button message: {:#?}", new_call);
 
-                    // send new order to master
+                    // Send new order to master
                     match self.send_new_order(new_call) {
                         Ok(_)   => {},
                         Err(e)  => println!("[SLAVE]\t\tFailed to send new order: {}", e),
@@ -273,8 +274,7 @@ impl Slave {
                     let message = msg.unwrap();
                     match message {
                         tcp::Message::NewOrder(callbutton) => {
-                            // Skal heisen selv om den er i bevegelse ta imot nye ordrer?
-                            // TEST om dette er riktig
+                            // TEST if this is right!
                             if self.behaviour == ElevatorBehaviour::Idle {
                                 self.nxt_order = callbutton.clone();
                                 println!("[SLAVE]\t\tReceived new order: {:#?}", callbutton);

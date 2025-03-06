@@ -1,5 +1,5 @@
 use crossbeam_channel as cbc;
-use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP};
+use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fmt;
@@ -35,7 +35,7 @@ impl fmt::Display for Order {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
     pub hall_queue: VecDeque<Order>, 
-    pub cab_queues: Vec<VecDeque<Order>>, // Vector of slave queues for internal cab calls. 
+    pub cab_queues: Vec<VecDeque<Order>>, // Vector of slave queues for internal cab calls. Index corresponds to slave number
 }
 
 impl MasterQueues {
@@ -49,6 +49,7 @@ impl MasterQueues {
         }
     }
 
+    
     pub fn add_to_hall_queue(&mut self, floor: u8, direction: u8) {
         match direction {
             HALL_UP => {
@@ -72,7 +73,7 @@ impl MasterQueues {
 
     pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
         self.cab_queues[slave_num as usize].push_back(Order {
-            call_button: CallButton { floor, call: 2 },
+            call_button: CallButton { floor, call: CAB },
             in_progress: false,
         });
     }
@@ -130,18 +131,17 @@ impl FmtDisplay for MasterQueues {
 // Master implementation
 #[derive(Debug)]
 pub struct Master {
-    pub config: Config,                                                                     // Config struct
-    slaves_ip: Vec<String>,                                                                 // Vector of slaves IP addresses
+    pub config: Config,                                                                     
+    slaves_ip: Vec<String>,                                                                 
     pub order_queues: Arc<Mutex<MasterQueues>>,                                             // Vector of slaves order queues
-    slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,        // Vector of slave channels. Sygt som fy
+    slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,        // Vector of slave channels. Ugly...
     num_slaves: Arc<Mutex<u8>>,                                                             // Variable for number of slaves in operation
-    master_to_backup_tx: Option<cbc::Sender<Message>>,
+    master_to_backup_tx: Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
 }
 
 impl Master {
     pub fn init(config: &Config, master_queue: MasterQueues) -> Result<Master, String> {
-        // Thread for listening for new slave connections
-        //let (incoming_conn_tx, incoming_conn_rx) = cbc::unbounded();
+
         let slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
             Arc::new(Mutex::new(Vec::new()));
 
@@ -154,7 +154,7 @@ impl Master {
             master_to_backup_tx: connect_to_new_backup(config.clone()),
         };
 
-        // find an avaliable backup to connect to
+        // Find an avaliable backup to connect to
         let master_port = config.master_port;
         let order_queues_clone: Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
         let slave_channels_clone: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
@@ -162,6 +162,8 @@ impl Master {
         let num_slaves_clone: Arc<Mutex<u8>> = Arc::clone(&master.num_slaves);
 
         println!("[MASTER]\tListening for slaves on port {}", master_port);
+
+        // Thread for listening for new slave connections
         spawn(move || {
             let listener =
                 TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str())
@@ -192,6 +194,7 @@ impl Master {
                             stream.peer_addr().unwrap()
                         );
                         spawn(|| {
+                            // Handles each slave connection in a separate thread.
                             handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx)
                         });
                     }
@@ -206,7 +209,8 @@ impl Master {
         Ok(master)
     }
 
-    // 3 x num_floors matrix for [hall up, hall down, cab] lights
+    // Returns a 3 x num_floors matrix for uypdating panel lights. 
+    // 3 x num_floors matrix for [hall up, hall down, cab] lights.
     fn make_light_matrix(&self, slave_number: u8, orders: MasterQueues) -> tcp::Message {
         let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
 
@@ -224,6 +228,7 @@ impl Master {
         Message::LightMatrix(new_matrix)
     }
 
+    // Main application loop for master (state machine). Should be refactored to be more readable.
     pub fn master_loop(&mut self) {
         loop {
             let locked_num_slaves = *self.num_slaves.lock().unwrap();
@@ -295,7 +300,7 @@ impl Master {
                                             .send(Message::Backup(orders_locked.clone()))
                                         {
                                             Ok(_) => {
-                                                // send lightmatrix to all slaves
+                                                // Send lightmatrix to all slaves
                                                 for i in 0..locked_num_slaves {
                                                     let light_matrix = self.make_light_matrix(
                                                         i,
@@ -376,7 +381,7 @@ impl Master {
                                 }
                             }
 
-                            Message::Idle(state) => {
+                            Message::Idle(state) => { // Variable not used. Do we need it?
                                 // Send next order to slave
                                 if self.order_queues.lock().unwrap().hall_queue.len() > 0
                                     || self.order_queues.lock().unwrap().cab_queues
@@ -450,6 +455,9 @@ impl Master {
     }
 }
 
+
+
+
 fn connect_to_new_backup(config: Config) -> Option<cbc::Sender<tcp::Message>> {
     let backup_ip_list: Vec<SocketAddr> = config
         .elevator_ip_list
@@ -480,7 +488,7 @@ fn connect_to_new_backup(config: Config) -> Option<cbc::Sender<tcp::Message>> {
     None
 }
 
-// Implementer funksjon for å håndtere meldinger fra slave
+// Handles the individual slave connections
 fn handle_slave_connection(
     mut stream: TcpStream,
     slave_to_master_tx: cbc::Sender<tcp::Message>,
@@ -522,6 +530,7 @@ fn handle_slave_connection(
     }
 }
 
+// Handles the backup connection. 
 fn handle_backup_connection(
     mut stream: TcpStream,
     master_to_backup_rx: cbc::Receiver<tcp::Message>,

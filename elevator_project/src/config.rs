@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::BufReader;
 use std::io::Error;
 use std::path::Path;
 use std::result::Result;
 
+// Maps the config file to a struct
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
     pub elevator_ip_list: Vec<String>,
@@ -42,7 +42,9 @@ impl Display for Config {
 }
 
 impl Config {
-    pub fn config(path: &Path) -> Result<Config, Error> {
+
+    // Reads the config file and returns a Config struct
+    pub fn read_config(path: &Path) -> Result<Config, Error> {
         println!("[CONFIG]\tReading config file");
         let file = match File::open(path) {
             Ok(file) => file,

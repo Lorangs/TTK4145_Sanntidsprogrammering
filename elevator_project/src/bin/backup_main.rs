@@ -4,7 +4,7 @@ use std::path::Path;
 
 // Main func for backup. Initializes backup. If backup crashes, it will restart and connect to a new master.
 fn main() {
-    let config = Config::config(Path::new("config.json")).unwrap();
+    let config = Config::read_config(Path::new("config.json")).unwrap();
     let backup_ip = config.elevator_ip_list[1].to_string() + ":" + &config.backup_port.to_string();
 
     loop {

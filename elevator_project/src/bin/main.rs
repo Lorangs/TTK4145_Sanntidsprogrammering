@@ -15,9 +15,4 @@ fn main() {
         .expect("Failed to start slave_main");
 
     // sleep(std::time::Duration::from_secs(10));
-
-    // Command::new("cargo")
-    //     .args(["run", "--bin", "slave_main"])
-    //     .spawn()
-    //     .expect("Failed to start slave_main");
 }

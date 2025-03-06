@@ -8,7 +8,7 @@ fn main() {
     println!("IP:\t{}", &args[1].to_string());
     print!("trying to start a slave\n");
 
-    let config = Config::config(Path::new("config.json")).unwrap();
+    let config = Config::read_config(Path::new("config.json")).unwrap();
 
     let slave_ip = config.elevator_ip_list[0].to_string() + ":" + &args[1].to_string();
 
