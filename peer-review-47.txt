@@ -31,6 +31,7 @@ bullet point 12:
         - We understand this is not the final project, but we miss networking and errorhandling. What happens when an elevator dies? What happens when the master dies? Please update your README to explain the program flow of your project.
         - Generally this is a good startingpoint for futher development. 
 
+// Antonie skriver denne
 3701d923
 score:
 bullet point 1:
@@ -41,6 +42,7 @@ bullet point 5:
 bullet point 6:
 bullet point 7:
 
+// William skriver denne
 dbca849d
 score:
 bullet point 1:
@@ -51,6 +53,7 @@ bullet point 5:
 bullet point 6:
 bullet point 7:
 
+// Vår egen i felleskap
 be6f64cd
 score:
 bullet point 1:
