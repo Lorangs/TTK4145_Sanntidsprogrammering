@@ -1,13 +1,37 @@
 019fcb6b
-score:
+score:  7
 bullet point 1:
+    Consider using enum with associated information for pub const variables in prelude.rs line: {88-90 & 100-107}
 bullet point 2:
+    Consider implementing fmt::display for writeout of structs and enums instead of specific print() functions. This goes for debug functions as well. 
 bullet point 3:
+    Consider initilicing Status::target_floor to None instead of Some(u8::MAX). It makes no sense to initilize an order with specific order information (target_floor etc). The same goes for initilizing the Order struct
 bullet point 4:
+    Consider using an config file or alternatives for loading initial constants, IP adresses and ect. Makes life easier when altering project parameters.
 bullet point 5:
+    In elevator.rs: elevdirn_to_halldirn() & halldirn_to_elevdirn() & opposite_direction_hall & check_for_stop() is unnecessary functions and only used once throughout your project. 
+    These functions could be written direclty inplace to avoid unnecessary overhead cloning and borrowing of data. 
+    This goes for other similar functions as well throughout your project.
 bullet point 6:
+    Please erase unused code. There is allot of lines that is not used in your design.
 bullet point 7:
+    In elevator.rs: open_door function sleeps for 3 seconds, blocking all other incoming and outgoing commands. Could be resolved by spawning an own thread for the door timer.
+bullet point 8:
+    Consider turning lights off and on within the same function. (elevator.rs: check_lights())
+bullet point 9:
+    Consider renaming of function check_for_bottom() to reflect the actual purpous of the function. example: check_for_end_floors().
+    Same goes for order_up() on line: 24 in master.rs
+bullet poit 10:
+    In function elevator_controller() line: 305, what is the meaning of hard setting floor_number = 0? please comment or consider implementing this another way.
+bullet point 11:
+    Consistency with data types. In master.rs cost_of_order() casting from u8 to i32, then back again to u8. Please keep your data types consistant.
+bullet point 12:
+    Tips for the future:
+        - Check and sort out warnings. The rust compiler is amazing at giving feedback on everything from unused code, to nameing conventions as such.
+        - We understand this is not the final project, but we miss networking and errorhandling. What happens when an elevator dies? What happens when the master dies? Please update your README to explain the program flow of your project.
+        - Generally this is a good startingpoint for futher development. 
 
+// Antonie skriver denne
 3701d923
 score:
 bullet point 1:
@@ -18,6 +42,7 @@ bullet point 5:
 bullet point 6:
 bullet point 7:
 
+// William skriver denne
 dbca849d
 score:
 bullet point 1:
@@ -28,6 +53,7 @@ bullet point 5:
 bullet point 6:
 bullet point 7:
 
+// Vår egen i felleskap
 be6f64cd
 score:
 bullet point 1:
