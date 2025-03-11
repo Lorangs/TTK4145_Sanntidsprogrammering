@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream, Ipv4Addr};
 use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
@@ -132,7 +132,6 @@ impl FmtDisplay for MasterQueues {
 #[derive(Debug)]
 pub struct Master {
     pub config: Config,                                                                     
-    slaves_ip: Vec<String>,                                                                 
     pub order_queues: Arc<Mutex<MasterQueues>>,                                             // Vector of slaves order queues
     slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,        // Vector of slave channels. Ugly...
     num_slaves: Arc<Mutex<u8>>,                                                             // Variable for number of slaves in operation
@@ -147,7 +146,6 @@ impl Master {
 
         let master = Master {
             config: config.clone(),
-            slaves_ip: config.elevator_ip_list.clone(),
             order_queues: Arc::new(Mutex::new(master_queue)),
             slave_channels: slave_channels,
             num_slaves: Arc::new(Mutex::new(0)),
@@ -427,7 +425,8 @@ impl Master {
                                                 }
                                             }
                                             None => {
-                                                todo!();
+                                                //todo!();
+                                                println!("[MASTER]\tNo orders available for slave {}", slave_number);
                                             }
                                         }
                                     }
@@ -481,7 +480,7 @@ fn connect_to_new_backup(config: Config) -> Option<cbc::Sender<tcp::Message>> {
                     "[MASTER]\tFailed to connect to backup at {}: {}",
                     backup_ip, e
                 );
-                todo!();
+                //todo!();
             }
         }
     }
@@ -509,9 +508,9 @@ fn handle_slave_connection(
                     slave_to_master_tx.send(recieved).unwrap();
                 }
             }
-            Err(_) => {
-                //eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e)
-                todo!();
+            Err(e) => {
+                //eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e);
+                //todo!();
             }
         }
 
@@ -524,7 +523,7 @@ fn handle_slave_connection(
             }
             Err(_) => {
                 //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                todo!();
+                //todo!();
             }
         }
     }
@@ -544,8 +543,8 @@ fn handle_backup_connection(
                 println!("[MASTER]\tSent order to backup: {:#?}", message);
             }
             Err(_) => {
-                //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                todo!();
+                eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                //todo!();
             }
         }
     }

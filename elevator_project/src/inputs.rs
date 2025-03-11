@@ -1,10 +1,11 @@
-use crossbeam_channel as cbc;
+use crossbeam_channel::{self as cbc, TryRecvError};
 use driver_rust::elevio::{self};
 use std::fmt;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
+
 
 use crate::tcp;
 
@@ -15,14 +16,12 @@ pub struct SlaveChannels {
     pub call_button_rx: cbc::Receiver<elevio::poll::CallButton>,
     pub stop_button_rx: cbc::Receiver<bool>,
     pub obstruction_rx: cbc::Receiver<bool>,
-    pub master_message_rx: cbc::Receiver<tcp::Message>,
 }
 
 // Spawns threads for all the slave input channels and returns a SlaveChannels struct. 
 pub fn spawn_threads_for_slave_inputs(
     elevator: &elevio::elev::Elevator,
     input_poll_rate_ms: u64,
-    master_socket: &TcpStream,
 ) -> SlaveChannels {
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
 
@@ -50,36 +49,11 @@ pub fn spawn_threads_for_slave_inputs(
         spawn(move || elevio::poll::obstruction(elevator, obstruction_tx, poll_period));
     }
 
-    let mut master_socket_clone = master_socket.try_clone().expect("Failed to clone socket");
-    let (master_message_tx, master_message_rx) = cbc::unbounded::<tcp::Message>();
-    spawn(move || {
-        let mut encoded = [0; 1024];
-        loop {
-            match master_socket_clone.read(&mut encoded) {
-                Ok(size) => {
-                    if size > 0 {
-                        let message: tcp::Message =
-                            bincode::deserialize(&encoded).expect("Failed to deserialize message");
-                        println!("[SLAVE]\tReceived message from master: {:#?}", message);
-                        master_message_tx.send(message).unwrap();
-                    }
-                }
-                Err(e) => {
-                    println!("[SLAVE]\tFailed to read from stream: {}", e);
-                    continue; // TODO: Sjekk om dette er riktig
-                              // return e;
-                }
-            }
-            sleep(poll_period);
-        }
-    });
-
     SlaveChannels {
         floor_sensor_rx,
         call_button_rx,
         stop_button_rx,
         obstruction_rx,
-        master_message_rx,
     }
 }
 
@@ -93,15 +67,67 @@ impl fmt::Display for SlaveChannels {
     call_button_rx: {:?},
     stop_button_rx: {:?},
     obstruction_rx: {:?},
-    master_message_rx: {:?}
+
 }}",
             self.floor_sensor_rx,
             self.call_button_rx,
             self.stop_button_rx,
             self.obstruction_rx,
-            self.master_message_rx
+
         )
     }
+}
+
+
+pub fn spawn_thread_for_master_connection(
+    mut master_socket: TcpStream,
+    input_poll_rate_ms: u64,
+) -> (cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>){
+    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
+
+    let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded::<tcp::Message>();
+    let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded::<tcp::Message>();
+
+    spawn(move || {
+        let mut encoded = [0; 1024];
+        loop {
+            match slave_to_master_rx.try_recv() {
+                Ok(message) => {
+                    let encoded = bincode::serialize(&message).expect("Failed to serialize message");
+                    match master_socket.write(&encoded) {
+                        Ok(_) => {
+                            println!("[SLAVE]\tSent message to master: {:#?}", message);
+                        }
+                        Err(e) => {
+                            println!("[SLAVE]\tFailed to write to stream: {}", e);
+                            master_to_slave_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                        }
+                    }
+                }
+                Err(e) => {
+                    //println!("[SLAVE]\tMaster disconnected");
+                    continue;
+                }
+            }
+
+            match master_socket.read(&mut encoded) {
+                Ok(size) => {
+                    if size > 0 {
+                        let message: tcp::Message =
+                            bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                        println!("[SLAVE]\tReceived message from master: {:#?}", message);
+                        master_to_slave_tx.send(message).unwrap();
+                    }
+                }
+                Err(e) => {
+                    println!("[SLAVE]\tFailed to read from stream: {}", e);
+                    master_to_slave_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                }
+            }
+            sleep(poll_period);
+        }
+    });
+    (slave_to_master_tx, master_to_slave_rx)
 }
 
 /********************************************************************************************************************/

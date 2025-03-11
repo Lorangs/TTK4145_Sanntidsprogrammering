@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::master::MasterQueues;
-use crate::tcp::Message;
+use crate::tcp::{Message, ErrorState};
 
 pub struct Backup {
     orders: MasterQueues,
@@ -51,7 +51,7 @@ impl Backup {
     }
 
     // Updates backup orders and returns them if master disconnects
-    // Ned to handle the case where the backup recieves a message but dont update the orders. May need to be handles in both backup and master.
+    // Ned to handle the case where the backup recieves a message but dont update the orders. May need to be handled in both backup and master.
     pub fn backup_loop(&mut self) -> MasterQueues {
         loop {
             match self.master_to_backup_rx.recv() {
@@ -61,12 +61,20 @@ impl Backup {
                             self.orders = data;
                             println!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
                         }
+                        Message::Error(ErrorState::Network) => {
+                            println!("[BACKUP]\tMaster disconnected");
+                            return self.orders.clone();
+                        }
                         _ => {} // Do nothing for other types of incoming messages.
                     }
                 }
                 Err(cbc::RecvError) => {
                     println!("[BACKUP]\tMaster disconnected");
-                    return self.orders.clone();
+
+                    // try sending error state to master so that master can initilize an other backup.
+                    // if not possible, return orders and inititize self as new master.
+
+                    //return self.orders.clone();
                 }
             }
         }
@@ -94,7 +102,8 @@ fn handle_master_connection(
             }
             Err(e) => {
                 println!("Error: {}", e);
-                todo!();
+                let message = Message::Error(ErrorState::Network);
+                master_to_backup_tx.send(message).unwrap();
             }
         }
     }

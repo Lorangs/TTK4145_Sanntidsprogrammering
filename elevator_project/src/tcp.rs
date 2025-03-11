@@ -1,6 +1,6 @@
 // This file contains the TCP module, which is responsible for handling the TCP connection between the elevator and the scheduler.
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::fmt::{self, write};
 
 use crate::master::MasterQueues;
 
@@ -44,7 +44,8 @@ pub enum ErrorState {
     OK,
     EmergancyStop,
     DoorObstruction,
-    Network(String),
+    Network,
+    NoMaster,
 }
 
 impl fmt::Display for ErrorState {
@@ -53,7 +54,8 @@ impl fmt::Display for ErrorState {
             ErrorState::OK => write!(f, "OK"),
             ErrorState::EmergancyStop => write!(f, "Emergancy stop"),
             ErrorState::DoorObstruction => write!(f, "Door obstruction"),
-            ErrorState::Network(s) => write!(f, "Network error: {}", s),
+            ErrorState::Network => write!(f, "Network error"),
+            ErrorState::NoMaster => write!(f, "No connected Master"),
         }
     }
 }
