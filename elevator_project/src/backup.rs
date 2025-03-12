@@ -109,10 +109,10 @@ fn handle_master_connection(
                     break;
                 }
             }
-            Err(e) => { // då kan vi nokk forenkle dinna litt trudde den kom til å fange opp disconecten
+            Err(e) => { // då kan vi nokk forenkle eller fjerne dinna litt trudde den kom til å fange opp disconecten
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                     // No data available, continue the loop
-                    println!("[BACKUP]\tNo data available");
+                    //println!("[BACKUP]\tNo data available");
                     continue;
                 } else {
                     // Connection lost or other error

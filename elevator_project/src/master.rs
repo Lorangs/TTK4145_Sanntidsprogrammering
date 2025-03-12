@@ -226,6 +226,8 @@ impl Master {
 
     // Main application loop for master (state machine). Should be refactored to be more readable.
     pub fn master_loop(&mut self) {
+        
+        
         loop {
             if self.backup_disconected_rx.try_recv().is_ok() {
                 self.master_to_backup_tx = None;

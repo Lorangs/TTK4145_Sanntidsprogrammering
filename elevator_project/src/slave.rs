@@ -128,6 +128,18 @@ impl Slave {
                 Ok(stream) => {
                     println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
                     self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
+                    //send cab cue to master
+                    let mut call_buttons_to_send = Vec::new();
+                    for (floor, order) in self.local_orders.iter().enumerate() {
+                        if order.cab_call { //eller skal vi ta med alt?
+                            call_buttons_to_send.push(tcp::CallButton { floor: floor as u8, call: 2 });
+                        }
+                    }
+                    
+                    for call_button in call_buttons_to_send {
+                        print!("Sending cab call to master: {:#?}", call_button);
+                        self.send_new_order(call_button);
+                    }
                     return;
                 },
                 Err(_e) => {}   // Continue trying with the next IP address
@@ -178,7 +190,7 @@ impl Slave {
         match self.master_channels.as_mut().unwrap().0.send(message) {
             Ok(_) => {},
             Err(e) => {
-                println!("[SLAVE]\t\tFailed to send cab order: {}", e);
+                println!("[SLAVE]\t\tFailed to send order: {}", e);
                 self.master_channels = None;
             }
         }
@@ -255,13 +267,13 @@ impl Slave {
         }
     }
 
-
     // State machine for the slave elevator
     pub fn slave_loop(&mut self) {
         loop {
 
             /**************local operation mode***************/
             if self.master_channels.is_none() {
+
                 cbc::select! {
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
@@ -357,6 +369,7 @@ impl Slave {
                         match self.behaviour {
                             ElevatorBehaviour::Moving => {
                                 // If the elevator is moving, check if it has reached the next order. If not: keep moving.
+                                println!("[SLAVE]\t\tMoving. Floor: {:?}, next order {}", self.floor, self.nxt_order.floor);
                                 if self.floor == self.nxt_order.floor
                                 {
                                     self.direction = Direction::Stop;
@@ -440,6 +453,11 @@ impl Slave {
                                 println!("[SLAVE]\t\tReceived error message from master"); 
                                 println!("[SLAVE]\t\tStarting in local operating mode");
                                 self.master_channels = None;
+                                if self.behaviour == ElevatorBehaviour::Idle{ //fiksa sånn at du ikkje må trykke to ganga
+                                    self.sync_lights_local();
+                                    self.start_moving_local();
+                                }
+                
                             },
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
@@ -528,11 +546,14 @@ impl Slave {
 
     fn start_moving_local(&mut self) {
         let (diraction, behaviour) = self.choose_direction();
+        self.nxt_order = tcp::CallButton { floor: 1, call: 0};
         self.behaviour = behaviour;
-
+        
         if behaviour == ElevatorBehaviour::DoorOpen {
             println!("Stopped with door open at floor {:?}", self.floor);
-            self.clear_at_current_floor();
+            self.clear_at_current_floor(); //den opna ikkje døra når den fikk order i samme etasje so de va, so la til 2 linje som fiksa det
+            self.sync_lights_local();
+            self.elevator.door_light(true);
             self.start_door_timer(Duration::from_secs(3));
         }
 
