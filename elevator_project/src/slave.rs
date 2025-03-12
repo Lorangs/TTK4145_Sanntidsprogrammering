@@ -1,5 +1,4 @@
 use driver_rust::elevio::elev as e;
-use bincode;
 use crossbeam_channel as cbc;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
@@ -57,7 +56,7 @@ impl Slave {
     pub fn init(slave_addr: String, config: &Config) -> Slave {
         let conf: Config = config.clone();
         let elev: e::Elevator = e::Elevator::init(&slave_addr, config.number_of_floors)
-        .expect("Failed to initialize elevator");
+        .expect("[SLAVE]\t\tFailed to initialize elevator");
     
         // Connect to master. If connection fails, start elevator in local operation mode.
         let mut master_channels: Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)> = None;
@@ -68,19 +67,19 @@ impl Slave {
             let socket_addr = std::net::SocketAddrV4::new(*ip_addr, conf.master_port);
             
             match TcpStream::connect(socket_addr) {
-                Ok(socket) => {
-                    println!("[SLAVE]\tConnected to master at {}:{}", ip_addr, conf.master_port);
-                    master_channels = Some(inputs::spawn_thread_for_master_connection(socket, conf.input_poll_rate_ms));
+                Ok(stream) => {
+                    println!("[SLAVE]\t\tConnected to master at {}", socket_addr);
+                    master_channels = Some(inputs::spawn_thread_for_master_connection(stream, conf.input_poll_rate_ms));
                     break;
                 },
                 Err(e) => {
-                    println!("[SLAVE]\tFailed to connect to master at {}:{}: {}", ip_addr, conf.master_port, e);
+                    println!("[SLAVE]\t\tFailed to connect to master at: {} with error: {}", socket_addr, e);
                     // Continue trying with the next IP address
                 }
             }
         }
         if master_channels.is_none() {
-            println!("[SLAVE]\tNo master found. Starting in local operation mode.");
+            println!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
         }
     
         let chs: inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(
@@ -141,26 +140,26 @@ impl Slave {
     }
 
     // Try to connect to new master
-    fn connect_to_new_master(&mut self) -> bool{
+    fn connect_to_new_master(&mut self) {
         // Try to connect to any master in the IP list
+        println!("[SLAVE]\t\tTrying to connect to new master");
         for ip_addr in &self.config.elevator_ip_list {
             let socket_addr = std::net::SocketAddrV4::new(*ip_addr, self.config.master_port);
 
             match TcpStream::connect(socket_addr) {
-                Ok(socket) => {
-                    println!("[SLAVE]\tConnected to master at {}:{}", ip_addr, self.config.master_port);
-                    self.master_channels = Some(inputs::spawn_thread_for_master_connection(socket, self.config.input_poll_rate_ms));
-                    return true;   
+                Ok(stream) => {
+                    println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
+                    self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
+                    return;
                 },
                 Err(_e) => {}   // Continue trying with the next IP address
                 
             }
         }
-        return false;
     }
 
     // Poll light information from dirver and update light_matrix
-    pub fn sync_lights_normal(&self) {
+    fn sync_lights_normal(&self) {
         println!("Syncing lights");
         for (floor_index, light_array) in self.light_matrix.iter().enumerate() {
             let floor = floor_index as u8;
@@ -174,7 +173,7 @@ impl Slave {
     }
 
     // Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel when done. 
-    pub fn start_door_timer(&self, duration: Duration) {
+    fn start_door_timer(&self, duration: Duration) {
         let tx = self.door_timer.0.clone();
         spawn(move || {
             sleep(duration);
@@ -182,14 +181,14 @@ impl Slave {
         });
     }
 
-    pub fn send_new_order(&mut self, callbutton: tcp::CallButton) {
+    fn send_new_order(&mut self, callbutton: tcp::CallButton) {
         let message = tcp::Message::NewOrder(callbutton.clone());
 
         // append order to local_orders. Does not affect the elevator in normal operation mode
         match callbutton.call {
-            0 => self.local_orders[callbutton.floor as usize].hall_up = true,
+            0 => self.local_orders[callbutton.floor as usize].hall_up   = true,
             1 => self.local_orders[callbutton.floor as usize].hall_down = true,
-            2 => self.local_orders[callbutton.floor as usize].cab_call = true,
+            2 => self.local_orders[callbutton.floor as usize].cab_call  = true,
             _ => panic!("Mottok ukjent knappetype"),
         }
 
@@ -199,9 +198,7 @@ impl Slave {
         }
 
         match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => {
-                println!("[SLAVE]\t\tSent order:\t{}", callbutton);
-            }
+            Ok(_) => {},
             Err(e) => {
                 println!("[SLAVE]\t\tFailed to send cab order: {}", e);
                 self.master_channels = None;
@@ -209,7 +206,7 @@ impl Slave {
         }
     }
 
-    pub fn send_order_complete(&mut self) {
+    fn send_order_complete(&mut self) {
         let message = tcp::Message::OrderComplete(self.nxt_order);
 
         // remove order from local_orders list
@@ -221,13 +218,13 @@ impl Slave {
         }
 
         match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => println!("[SLAVE]\t\tSent order complete"),
+            Ok(_) => {},
             Err(e) => println!("[SLAVE]\t\tFailed to send order complete: {}", e),
         }
 
     }
 
-    pub fn send_stop_button(&mut self) {
+    fn send_stop_button(&mut self) {
         let message = tcp::Message::Error(tcp::ErrorState::EmergancyStop);
 
         if self.master_channels.is_none() {
@@ -236,12 +233,12 @@ impl Slave {
         }
 
         match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => println!("[SLAVE]\t\tSent stop button"),
+            Ok(_) => {},
             Err(e) => println!("[SLAVE]\t\tFailed to send stop button: {}", e),
         }
     }
 
-    pub fn send_idle(&mut self) {
+    fn send_idle(&mut self) {
         let message = tcp::Message::Idle(true);
         if self.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -249,13 +246,13 @@ impl Slave {
         }
 
         match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => println!("[SLAVE]\t\tSent idle"),
+            Ok(_) => {},
             Err(e) => println!("[SLAVE]\t\tFailed to send idle: {}", e),
         }
     }
 
     // Choose direction based on next order and start moving. 
-    pub fn start_moving_normal(&mut self) {
+    fn start_moving_normal(&mut self) {
         if self.behaviour == ElevatorBehaviour::DoorOpen
             || self.behaviour == ElevatorBehaviour::OutOfOrder
         {
@@ -284,93 +281,96 @@ impl Slave {
     // State machine for the slave elevator
     pub fn slave_loop(&mut self) {
         loop {
-            if self.behaviour == ElevatorBehaviour::Idle {
-                self.send_idle();
-            }
 
-            // local operation mode:
+            /**************local operation mode***************/
             if self.master_channels.is_none() {
-                if !self.connect_to_new_master() {
-                    cbc::select! {
-                        recv(self.channels.call_button_rx) -> msg => {
-                            let call_button = msg.unwrap();
-                            println!("Received call button message: {:#?}", call_button);
-                
-                            match call_button.call {
-                                0 => self.local_orders[call_button.floor as usize].hall_up = true,
-                                1 => self.local_orders[call_button.floor as usize].hall_down = true,
-                                2 => self.local_orders[call_button.floor as usize].cab_call = true,
-                                _ => panic!("[SLAVE]\t\tReceived unknown call button type"),
-                            }
-                
-                            self.sync_lights_local();
-                            
-                            match self.behaviour {
-                                ElevatorBehaviour::Idle => {
-                                    self.start_moving_local();
-                                },
-                                _ => {},
-                            }
+                cbc::select! {
+                    recv(self.channels.call_button_rx) -> msg => {
+                        let call_button = msg.unwrap();
+                        println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
+            
+                        // Update local orders
+                        match call_button.call {
+                            0 => self.local_orders[call_button.floor as usize].hall_up = true,
+                            1 => self.local_orders[call_button.floor as usize].hall_down = true,
+                            2 => self.local_orders[call_button.floor as usize].cab_call = true,
+                            _ => panic!("[SLAVE]\t\tReceived unknown call button type"),
                         }
+            
+                        self.sync_lights_local();
                         
-                        // Receive floor sensor message
-                        recv(self.channels.floor_sensor_rx) -> msg => {
-                            let floor_sensor = msg.unwrap();
-                            println!("Received floor sensor message: {:#?}", floor_sensor);
-                            self.floor = floor_sensor;
-                
-                            match self.behaviour {
-                                ElevatorBehaviour::Moving => { 
-                                    self.floor = floor_sensor;
-                                    self.elevator.floor_indicator(self.floor as u8);
-                                    if self.should_stop() {
-                                        println!("Stopping at floor {:?}", self.floor);
-                                        self.behaviour = ElevatorBehaviour::DoorOpen;
-                                        self.elevator.door_light(true);
-                                        self.clear_at_current_floor();
-                                        self.sync_lights_local();
-                                        self.elevator.motor_direction(e::DIRN_STOP);
-                
-                                        self.start_door_timer(Duration::from_secs(3));    // starting doortimer
-                                    }
-                                },
-                                _ => {},
-                            }
-                        }
-                
-                        // Receive stop button message
-                        recv(self.channels.stop_button_rx) -> msg => {
-                            let stop_button = msg.unwrap();
-                            println!("Stop button: {:#?}", stop_button);
-                            self.elevator.motor_direction(e::DIRN_STOP);
-                            self.behaviour = ElevatorBehaviour::OutOfOrder; 
-                        }
-                
-                        recv(self.channels.obstruction_rx) -> msg => {
-                            let obstr = msg.unwrap();
-                            self.obstruction = obstr;
-                
-                            println!("Obstruction: {:#?}", obstr);
-                        }
-                
-                        // Receive timer message
-                        recv(self.door_timer.1) -> _msg => {
-                            if self.obstruction {
-                                //println!("Obstruction detected. Timer reset.");
-                                self.start_door_timer(Duration::from_secs(3));
-                            }
-                            else {
-                                println!("Timer expired. Door closing.");
-                                self.elevator.door_light(false);
+                        match self.behaviour {
+                            ElevatorBehaviour::Idle => {
                                 self.start_moving_local();
-                            }
+                            },
+                            _ => {},
                         }
                     }
-                }// if !connect_to_new_master
+                    
+                    // Receive floor sensor message
+                    recv(self.channels.floor_sensor_rx) -> msg => {
+                        let floor_sensor = msg.unwrap();
+                        println!("[SLAVE]\t\tReceived floor sensor message: {:#?}", floor_sensor);
+                        self.floor = floor_sensor;
+            
+                        match self.behaviour {
+                            ElevatorBehaviour::Moving => { 
+                                self.floor = floor_sensor;
+                                self.elevator.floor_indicator(self.floor as u8);
+                                if self.should_stop() {
+                                    println!("[SLAVE]\t\tStopping at floor {:?}", self.floor);
+                                    self.behaviour = ElevatorBehaviour::DoorOpen;
+                                    self.elevator.door_light(true);
+                                    self.clear_at_current_floor();
+                                    self.sync_lights_local();
+                                    self.elevator.motor_direction(e::DIRN_STOP);
+            
+                                    self.start_door_timer(Duration::from_secs(3));    // starting doortimer
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+            
+                    // Receive stop button message
+                    recv(self.channels.stop_button_rx) -> msg => {
+                        let stop_button = msg.unwrap();
+                        println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
+                        self.elevator.motor_direction(e::DIRN_STOP);
+                        self.behaviour = ElevatorBehaviour::OutOfOrder; 
+                    }
+            
+                    recv(self.channels.obstruction_rx) -> msg => {
+                        let obstr = msg.unwrap();
+                        self.obstruction = obstr;
+            
+                        println!("[SLAVE]\t\tObstruction: {:#?}", obstr);
+                    }
+            
+                    // Receive timer message
+                    recv(self.door_timer.1) -> _msg => {
+                        if self.obstruction {
+                            //println!("Obstruction detected. Timer reset.");
+                            self.start_door_timer(Duration::from_secs(3));
+                        }
+                        else {
+                            println!("[SLAVE]\t\tTimer expired. Door closing.");
+                            self.elevator.door_light(false);
+                            self.start_moving_local();
+                        }
+                    }
+                }// cbc::select!
+
+                // If the elevator is in local operation mode and the master is not connected, try to connect to a new master
+                self.connect_to_new_master();
             }// if master_channels.is_none
 
-            // normal operation:
+
+            /**************normal operation***************/
             else {
+                if self.behaviour == ElevatorBehaviour::Idle {
+                    self.send_idle();
+                }
                 cbc::select! {
                     // Receive floor sensor from elevator
                     recv(self.channels.floor_sensor_rx) -> msg => {
@@ -398,7 +398,6 @@ impl Slave {
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
                         let new_call = tcp::CallButton { floor: call_button.floor, call: call_button.call };
-
                         println!("[SLAVE]\t\tReceived call button message: {:#?}", new_call);
                         self.send_new_order(new_call);
                     }
@@ -435,7 +434,7 @@ impl Slave {
                     }
 
                     // Receive incoming message from master
-                    recv(self.master_channels.as_mut().unwrap().1) -> msg => {
+                    recv(self.master_channels.clone().unwrap().1) -> msg => {
                         let message = msg.unwrap();
                         match message {
                             tcp::Message::NewOrder(callbutton) => {
@@ -461,7 +460,11 @@ impl Slave {
                                 //println!("[SLAVE]\t\tReceived light matrix");
                                 self.sync_lights_normal();
                             },
-                            tcp::Message::Error(_) => { println!("[SLAVE]\t\tReceived error message from master"); },
+                            tcp::Message::Error(_) => { 
+                                println!("[SLAVE]\t\tReceived error message from master"); 
+                                println!("[SLAVE]\t\tStarting in local operating mode");
+                                self.master_channels = None;
+                            },
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }

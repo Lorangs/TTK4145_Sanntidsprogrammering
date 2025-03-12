@@ -139,25 +139,27 @@ pub struct Master {
 }
 
 impl Master {
-    pub fn init(config: &Config, master_queue: MasterQueues) -> Result<Master, String> {
-
-        let slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
-            Arc::new(Mutex::new(Vec::new()));
+    pub fn init
+    (
+        config: &Config, 
+        master_queue: MasterQueues
+    ) -> Result<Master, String> 
+    {
+        let slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::new(Mutex::new(Vec::new()));
 
         let master = Master {
-            config: config.clone(),
-            order_queues: Arc::new(Mutex::new(master_queue)),
-            slave_channels: slave_channels,
-            num_slaves: Arc::new(Mutex::new(0)),
-            master_to_backup_tx: connect_to_new_backup(config.clone()),
+            config                  : config.clone(),
+            order_queues            : Arc::new(Mutex::new(master_queue)),
+            slave_channels          : slave_channels,
+            num_slaves              : Arc::new(Mutex::new(0)),
+            master_to_backup_tx     : connect_to_new_backup(config.clone()),
         };
 
         // Find an avaliable backup to connect to
-        let master_port = config.master_port;
-        let order_queues_clone: Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
-        let slave_channels_clone: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> =
-            Arc::clone(&master.slave_channels);
-        let num_slaves_clone: Arc<Mutex<u8>> = Arc::clone(&master.num_slaves);
+        let master_port             : u16 = config.master_port;
+        let order_queues_clone      : Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
+        let slave_channels_clone    : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::clone(&master.slave_channels);
+        let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.num_slaves);
 
         println!("[MASTER]\tListening for slaves on port {}", master_port);
 
@@ -443,7 +445,7 @@ impl Master {
                     }
                     Err(_) => {
                         //println!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                        todo!();
+                        //todo!();
                     }
                 }
             }
@@ -494,10 +496,10 @@ fn handle_slave_connection(
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
 ) {
     let mut buffer = [0; 1024];
+    stream
+        .set_nonblocking(true)
+        .expect("Failed to set non-blocking mode on stream");
     loop {
-        stream
-            .set_nonblocking(true)
-            .expect("Failed to set non-blocking mode on stream");
 
         match stream.read(&mut buffer) {
             Ok(size) => {
