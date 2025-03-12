@@ -1,1 +1,0 @@
-Result<MutexGuard<'_, (crossbeam_channel::Sender<Message>, crossbeam_channel::Receiver<Message>)>, PoisonError<MutexGuard<'_, (crossbeam_channel::Sender<Message>, crossbeam_channel::Receiver<Message>)>>>
