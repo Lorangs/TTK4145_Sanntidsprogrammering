@@ -10,13 +10,6 @@ use crate::tcp;
 
 const NUMBER_OF_FLOORS: u8 = 4;
 
-#[derive(Debug, Clone, Copy)]
-pub enum Direction {
-    Down = -1,
-    Stop = 0,
-    Up = 1,
-}
-
 // struct for orders in local operation mode
 #[derive(Debug, Clone, Copy)]
 pub struct LocalOrder {
@@ -33,7 +26,13 @@ pub enum ElevatorBehaviour {
     OutOfOrder,
 }
 
-// TODO: Maybe socket related to master should be a member variable?
+#[derive(Debug, Clone, Copy)]
+pub enum Direction {
+    Down = -1,
+    Stop = 0,
+    Up = 1,
+}
+
 #[derive(Debug)]
 pub struct Slave {
     pub config      : Config,
@@ -44,11 +43,11 @@ pub struct Slave {
     direction       : Direction,
     behaviour       : ElevatorBehaviour,
     channels        : inputs::SlaveChannels,
-    master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,       // If none, the elevator is in local mode
+    master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
     door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
-    light_matrix    : Vec<[bool; 3]>,                   // Hall_UP, Hall_DOWN, CAB_CALL for each floor
+    light_matrix    : Vec<[bool; 3]>,                                                       // Hall_UP, Hall_DOWN, CAB_CALL for each floor
 
-    // parameter for local operation mode
+    // parameter for local operation mode:
     local_orders     : [LocalOrder; NUMBER_OF_FLOORS as usize],
 }
 
@@ -57,30 +56,6 @@ impl Slave {
         let conf: Config = config.clone();
         let elev: e::Elevator = e::Elevator::init(&slave_addr, config.number_of_floors)
         .expect("[SLAVE]\t\tFailed to initialize elevator");
-    
-        // Connect to master. If connection fails, start elevator in local operation mode.
-        let mut master_channels: Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)> = None;
-        
-        // Try to connect to any master in the IP list
-        for ip_addr in &conf.elevator_ip_list {
-            // Create socket address from IP and port
-            let socket_addr = std::net::SocketAddrV4::new(*ip_addr, conf.master_port);
-            
-            match TcpStream::connect(socket_addr) {
-                Ok(stream) => {
-                    println!("[SLAVE]\t\tConnected to master at {}", socket_addr);
-                    master_channels = Some(inputs::spawn_thread_for_master_connection(stream, conf.input_poll_rate_ms));
-                    break;
-                },
-                Err(e) => {
-                    println!("[SLAVE]\t\tFailed to connect to master at: {} with error: {}", socket_addr, e);
-                    // Continue trying with the next IP address
-                }
-            }
-        }
-        if master_channels.is_none() {
-            println!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
-        }
     
         let chs: inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(
             &elev,
@@ -96,10 +71,11 @@ impl Slave {
             direction: Direction::Stop,
             behaviour: ElevatorBehaviour::Idle,
             channels: chs,
-            master_channels: master_channels,
+            master_channels: None,
             door_timer: cbc::unbounded::<bool>(),
             light_matrix: vec![[false; 3]; config.number_of_floors as usize],
 
+            // parameter for local operation mode:
             local_orders        : [LocalOrder{
                                                 hall_down   : false,
                                                 hall_up     : false,
@@ -117,7 +93,6 @@ impl Slave {
         slave.behaviour = ElevatorBehaviour::Moving;
         slave.direction = Direction::Down;
         slave.elevator.motor_direction(e::DIRN_DOWN);
-
         loop {
             cbc::select! {
                 recv(slave.channels.floor_sensor_rx) -> msg => {
@@ -135,14 +110,17 @@ impl Slave {
             }
         }
 
+        slave.try_connect_to_new_master();
+
+        if slave.master_channels.is_none() {
+            println!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
+        }
         println!("[SLAVE]\t\tInitialized slave:\n{}", slave);
         return slave;
     }
 
-    // Try to connect to new master
-    fn connect_to_new_master(&mut self) {
-        // Try to connect to any master in the IP list
-        println!("[SLAVE]\t\tTrying to connect to new master");
+  
+    fn try_connect_to_new_master(&mut self) {
         for ip_addr in &self.config.elevator_ip_list {
             let socket_addr = std::net::SocketAddrV4::new(*ip_addr, self.config.master_port);
 
@@ -359,10 +337,8 @@ impl Slave {
                             self.start_moving_local();
                         }
                     }
+                    default(Duration::from_millis(self.config.input_poll_rate_ms)) =>  self.try_connect_to_new_master(),
                 }// cbc::select!
-
-                // If the elevator is in local operation mode and the master is not connected, try to connect to a new master
-                self.connect_to_new_master();
             }// if master_channels.is_none
 
 
@@ -468,6 +444,7 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {},
                 }// cbc::select
             } // else
         } // loop
@@ -477,7 +454,7 @@ impl Slave {
 
     /************ functions for local operation mode **************/
 
-    pub fn orders_above(&self) -> bool{
+    fn orders_above(&self) -> bool{
         for floor in (self.floor + 1) .. self.config.number_of_floors {
             if self.local_orders[floor as usize].hall_down || self.local_orders[floor as usize].hall_up || self.local_orders[floor as usize].cab_call {
                 return true;
@@ -486,7 +463,7 @@ impl Slave {
         return false;   
     }
 
-    pub fn orders_below(&self) -> bool {
+    fn orders_below(&self) -> bool {
         for floor in 0 .. self.floor {
             if self.local_orders[floor as usize].hall_down || self.local_orders[floor as usize].hall_up || self.local_orders[floor as usize].cab_call {
                 return true;
@@ -502,7 +479,7 @@ impl Slave {
             self.local_orders[self.floor as usize].cab_call;
     }
 
-    pub fn should_stop(&self) -> bool{
+    fn should_stop(&self) -> bool{
         match self.direction{
             Direction::Down => {
                 self.local_orders[self.floor as usize].hall_down ||
@@ -518,7 +495,7 @@ impl Slave {
         }
     }
 
-    pub fn choose_direction(&self) -> (Direction, ElevatorBehaviour) {
+    fn choose_direction(&self) -> (Direction, ElevatorBehaviour) {
         match self.direction {
             Direction::Up => { return
                 if      self.orders_above() { ( Direction::Up,   ElevatorBehaviour::Moving ) }
@@ -543,13 +520,13 @@ impl Slave {
         }
     }
 
-    pub fn clear_at_current_floor(&mut self) {
+    fn clear_at_current_floor(&mut self) {
         self.local_orders[self.floor as usize].cab_call    = false;
         self.local_orders[self.floor as usize].hall_down   = false;
         self.local_orders[self.floor as usize].hall_up     = false;
     }
 
-    pub fn start_moving_local(&mut self) {
+    fn start_moving_local(&mut self) {
         let (diraction, behaviour) = self.choose_direction();
         self.behaviour = behaviour;
 

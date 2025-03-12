@@ -1,25 +1,24 @@
-use crossbeam_channel::{self as cbc, TryRecvError};
+use crossbeam_channel::{self as cbc};
 use driver_rust::elevio::{self};
 use std::fmt;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
-
-
 use crate::tcp;
 
 // Struct containing all the rx channels from the elevator io driver. 
 #[derive(Debug, Clone)]
 pub struct SlaveChannels {
-    pub floor_sensor_rx: cbc::Receiver<u8>,
-    pub call_button_rx: cbc::Receiver<elevio::poll::CallButton>,
-    pub stop_button_rx: cbc::Receiver<bool>,
-    pub obstruction_rx: cbc::Receiver<bool>,
+    pub floor_sensor_rx : cbc::Receiver<u8>,
+    pub call_button_rx  : cbc::Receiver<elevio::poll::CallButton>,
+    pub stop_button_rx  : cbc::Receiver<bool>,
+    pub obstruction_rx  : cbc::Receiver<bool>,
 }
 
 // Spawns threads for all the slave input channels and returns a SlaveChannels struct. 
-pub fn spawn_threads_for_slave_inputs(
+pub fn spawn_threads_for_slave_inputs
+(
     elevator: &elevio::elev::Elevator,
     input_poll_rate_ms: u64,
 ) -> SlaveChannels {
@@ -143,7 +142,7 @@ pub fn spawn_thread_for_master_connection
 
 
 /********************************************************************************************************************/
-
+/*********Master Inputs**********/
 
 #[derive(Debug, Clone)]
 pub struct MasterChannels {
@@ -151,11 +150,10 @@ pub struct MasterChannels {
     pub backup_rx: cbc::Receiver<tcp::Message>,
 }
 
-//Listen for new slave connections. Is runned in separate thread.
-// Need error handling
+
 pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
     let listener = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
-    println!("Listening for new connection\n");
+    println!("[MASTER]\tListening for new connection");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -172,7 +170,7 @@ pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
 }
 
 
-//Not used anywher. Under development or not needed?
+
 pub fn master_read_from_clients(
     mut stream: TcpStream,
     input_poll_rate_ms: u64,

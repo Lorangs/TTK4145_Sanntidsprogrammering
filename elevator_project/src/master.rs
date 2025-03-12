@@ -2,10 +2,9 @@ use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::fmt;
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream, Ipv4Addr};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
@@ -22,8 +21,8 @@ pub struct Order {
     in_progress: bool,
 }
 
-impl fmt::Display for Order {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtDisplay for Order {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
             "Order: {}, progress: {}",
@@ -54,7 +53,7 @@ impl MasterQueues {
         match direction {
             HALL_UP => {
                 self.hall_queue.push_back(Order {
-                    call_button: CallButton { floor, call: HALL_DOWN },
+                    call_button: CallButton { floor, call: HALL_UP },
                     in_progress: false,
                 });
             }
@@ -128,14 +127,13 @@ impl FmtDisplay for MasterQueues {
     }
 }
 
-// Master implementation
 #[derive(Debug)]
 pub struct Master {
-    pub config: Config,                                                                     
-    pub order_queues: Arc<Mutex<MasterQueues>>,                                             // Vector of slaves order queues
-    slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,        // Vector of slave channels. Ugly...
-    num_slaves: Arc<Mutex<u8>>,                                                             // Variable for number of slaves in operation
-    master_to_backup_tx: Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
+    pub config                      : Config,                                                                     
+    pub order_queues                : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
+    slave_channels                  : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,   // Vector of slave channels.
+    number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
+    master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
 }
 
 impl Master {
@@ -147,27 +145,25 @@ impl Master {
     {
         let slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::new(Mutex::new(Vec::new()));
 
-        let master = Master {
+        let mut master = Master {
             config                  : config.clone(),
             order_queues            : Arc::new(Mutex::new(master_queue)),
             slave_channels          : slave_channels,
-            num_slaves              : Arc::new(Mutex::new(0)),
-            master_to_backup_tx     : connect_to_new_backup(config.clone()),
+            number_of_slaves        : Arc::new(Mutex::new(0)),
+            master_to_backup_tx     : None,
         };
 
-        // Find an avaliable backup to connect to
+        master.try_connect_to_new_backup();
+
         let master_port             : u16 = config.master_port;
         let order_queues_clone      : Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
         let slave_channels_clone    : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::clone(&master.slave_channels);
-        let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.num_slaves);
-
-        println!("[MASTER]\tListening for slaves on port {}", master_port);
+        let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.number_of_slaves);
 
         // Thread for listening for new slave connections
         spawn(move || {
             let listener =
-                TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str())
-                    .expect("Failed to bind");
+                TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
             for stream in listener.incoming() {
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
                 let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
@@ -194,7 +190,6 @@ impl Master {
                             stream.peer_addr().unwrap()
                         );
                         spawn(|| {
-                            // Handles each slave connection in a separate thread.
                             handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx)
                         });
                     }
@@ -205,11 +200,10 @@ impl Master {
                 }
             }
         });
-
         Ok(master)
     }
 
-    // Returns a 3 x num_floors matrix for uypdating panel lights. 
+    // Returns a 3 x num_floors matrix for updating panel lights. 
     // 3 x num_floors matrix for [hall up, hall down, cab] lights.
     fn make_light_matrix(&self, slave_number: u8, orders: MasterQueues) -> tcp::Message {
         let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
@@ -231,26 +225,25 @@ impl Master {
     // Main application loop for master (state machine). Should be refactored to be more readable.
     pub fn master_loop(&mut self) {
         loop {
-            let locked_num_slaves = *self.num_slaves.lock().unwrap();
+            if self.master_to_backup_tx.is_none() {
+                self.try_connect_to_new_backup();
+            }
+
+            let locked_num_slaves = *self.number_of_slaves.lock().unwrap();
             for slave_number in 0..locked_num_slaves {
                 let locked_channels = self.slave_channels.lock().unwrap();
                 match locked_channels[slave_number as usize].1.try_recv() {
                     Ok(message) => {
                         match message {
                             Message::NewOrder(call_button) => {
-                                if call_button.call == 2
-                                // Cab call
+                                if call_button.call == CAB  
                                 {
                                     let mut orders_locked = self.order_queues.lock().unwrap();
                                     orders_locked.add_to_cab_queue(slave_number, call_button.floor);
 
                                     println!("[MASTER]\tAdded order to cab queue: {}", call_button);
 
-                                    if self.master_to_backup_tx.is_none() {
-                                        println!("[MASTER]\tConnecting to a new backup.");
-                                        self.master_to_backup_tx =
-                                            connect_to_new_backup(self.config.clone());
-                                    } else {
+                                    if self.master_to_backup_tx.is_some() {
                                         match self
                                             .master_to_backup_tx
                                             .as_mut()
@@ -276,23 +269,17 @@ impl Master {
                                             }
                                         }
                                     }
-                                } else
-                                // Is hall call
+                                } else // Message is a hall call
                                 {
-                                    // Add order to hall queue
                                     let mut orders_locked = self.order_queues.lock().unwrap();
                                     orders_locked
                                         .add_to_hall_queue(call_button.floor, call_button.call);
                                     println!(
-                                        "[MSATER]\tAdded order to hall queue: {}",
+                                        "[MASTER]\tAdded order to hall queue: {}",
                                         call_button
                                     );
 
-                                    if self.master_to_backup_tx.is_none() {
-                                        println!("[MASTER]\tConnecting to a new backup.");
-                                        self.master_to_backup_tx =
-                                            connect_to_new_backup(self.config.clone());
-                                    } else {
+                                    if self.master_to_backup_tx.is_some() {
                                         match self
                                             .master_to_backup_tx
                                             .as_mut()
@@ -346,11 +333,7 @@ impl Master {
                                     slave_number,
                                 );
 
-                                if self.master_to_backup_tx.is_none() {
-                                    println!("[MASTER]\tConnecting to a new backup.");
-                                    self.master_to_backup_tx =
-                                        connect_to_new_backup(self.config.clone());
-                                } else {
+                                if self.master_to_backup_tx.is_some() {
                                     // Send updated order list to backup
                                     match self
                                         .master_to_backup_tx
@@ -389,11 +372,7 @@ impl Master {
                                         .len()
                                         > 0
                                 {
-                                    if self.master_to_backup_tx.is_none() {
-                                        println!("[MASTER]\tConnecting to a new backup.");
-                                        self.master_to_backup_tx =
-                                            connect_to_new_backup(self.config.clone());
-                                    } else {
+                                    if self.master_to_backup_tx.is_some() {
                                         let mut orders_locked = self.order_queues.lock().unwrap();
                                         let nxt_order = orders_locked.get_next_order(slave_number);
                                         match nxt_order {
@@ -454,40 +433,41 @@ impl Master {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
-}
-
-
-
-
-fn connect_to_new_backup(config: Config) -> Option<cbc::Sender<tcp::Message>> {
-    let backup_ip_list: Vec<SocketAddr> = config
-        .elevator_ip_list
-        .iter()
-        .map(|ip| format!("{}:{}", ip, config.backup_port))
-        .map(|addr| addr.parse().expect("Failed to parse IP address"))
-        .collect();
-
-    for backup_ip in backup_ip_list {
-        match TcpStream::connect_timeout(&backup_ip, Duration::from_millis(config.tcp_timeout_ms)) {
-            Ok(backup_socket) => {
-                // Create channel for backup connection
-                let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
-                spawn(|| handle_backup_connection(backup_socket, master_to_backup_rx));
-
-                println!("[MASTER]\tConnected to backup at {}", backup_ip);
-                return Some(master_to_backup_tx);
-            }
-            Err(e) => {
-                eprintln!(
-                    "[MASTER]\tFailed to connect to backup at {}: {}",
-                    backup_ip, e
-                );
-                //todo!();
+    
+    fn try_connect_to_new_backup(&mut self) {
+        let backup_ip_list: Vec<SocketAddr> = self.config
+            .elevator_ip_list
+            .iter()
+            .map(|ip| format!("{}:{}", ip, self.config.backup_port))
+            .map(|addr| addr.parse().expect("Failed to parse IP address"))
+            .collect();
+    
+        for backup_ip in backup_ip_list {
+            match TcpStream::connect_timeout(&backup_ip, Duration::from_millis(self.config.tcp_timeout_ms)) {
+                Ok(backup_socket) => {
+                    // Create channel for backup connection
+                    let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
+                    spawn(|| handle_backup_connection(backup_socket, master_to_backup_rx));
+    
+                    println!("[MASTER]\tConnected to backup at {}", backup_ip);
+                    self.master_to_backup_tx = Some(master_to_backup_tx);
+                    return;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[MASTER]\tFailed to connect to backup at {}: {}",
+                        backup_ip, e
+                    );
+                    //todo!();
+                }
             }
         }
     }
-    None
 }
+
+
+
+
 
 // Handles the individual slave connections
 fn handle_slave_connection(

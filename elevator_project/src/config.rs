@@ -1,12 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::io::BufReader;
-use std::io::Error;
+use std::io::{BufReader, Error};
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::result::Result;
-use std::str::FromStr;
 
 
 
@@ -87,7 +85,6 @@ impl Display for Config {
 }
 
 impl Config {
-    // Reads the config file and returns a Config struct
     pub fn read_config(path: &Path) -> Result<Config, Error> {
         println!("[CONFIG]\tReading config file");
         let file = match File::open(path) {
@@ -103,6 +100,3 @@ impl Config {
         return Ok(config);
     }
 }
-
-
-  
