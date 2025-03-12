@@ -1,4 +1,4 @@
-# TTK4145_Sanntidsprogrammering_snapshot_hand_in
+# TTK4145_Sanntidsprogrammering
 
 ## Design philosophy
 The elevator system is design as a master-slave system with backup. The master handles all the incoming orders and distributes them to
@@ -17,3 +17,8 @@ We mainly handle synchronization between threads with the crossbeam channel libr
 - Add small delay to all infinite loops to prevent 100% CPU usage.
 
 - Local operating mode in cases where a elevator disconeects from the network is not implemented. 
+
+Contributers: 
+- Antonie
+- Lorang
+- William
