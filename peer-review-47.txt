@@ -60,5 +60,18 @@ bullet point 7:
 be6f64cd
 score:
 bullet point 1:
+    Clear enntry points for the program, and the different parts of it.
 bullet point 2:
-(bullet point 3:)
+    Handlign IP-adresses and ports can be done in a more elegant way. Using rusts build in IP-adress and port types.
+bullet point 3:
+    Refining network code to be more robust, setting tcp timouts, blocking/non-blocking sockets, set_nodelay() etc.
+bullet point 3: 
+    The modules could be separated in a better way. As an example the input.rs file contains code ralated to both master and slave.
+bullet point 4:
+    Consider making more functions to make readability better. (We are struggling with rusts ownership policy)
+bullet point 5: 
+    Erro handling is missing in many places. Runtime errors have to be handled in the right way, to make the system robust. 
+bullet point 6: 
+    Review syncronization mechanisms. Do we need to use both Arc<Mutex> and channels. Something we can simplify? Consider using RWlock insted of mutex?
+
+
