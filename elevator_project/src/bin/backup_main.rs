@@ -12,6 +12,7 @@ fn main() {
         let mut backup = Backup::init(&config);
         let masterqueues = backup.backup_loop();
         let mut master = Master::init(&config, masterqueues).unwrap();
+        print!("[MASTER]\tMaster initialized\n");
         master.master_loop();
     }
 }

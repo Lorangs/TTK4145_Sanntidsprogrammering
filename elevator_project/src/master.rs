@@ -134,6 +134,7 @@ pub struct Master {
     slave_channels                  : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,   // Vector of slave channels.
     number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
+    backup_disconected_rx           : cbc::Receiver<bool>,                                         // Channel for sending messages to backup
 }
 
 impl Master {
@@ -151,6 +152,7 @@ impl Master {
             slave_channels          : slave_channels,
             number_of_slaves        : Arc::new(Mutex::new(0)),
             master_to_backup_tx     : None,
+            backup_disconected_rx   : cbc::unbounded().1,
         };
 
         master.try_connect_to_new_backup();
@@ -225,7 +227,10 @@ impl Master {
     // Main application loop for master (state machine). Should be refactored to be more readable.
     pub fn master_loop(&mut self) {
         loop {
-            if self.master_to_backup_tx.is_none() {
+            if self.backup_disconected_rx.try_recv().is_ok() {
+                self.master_to_backup_tx = None;
+            }
+            if self.master_to_backup_tx.is_none() { //fjerne?
                 self.try_connect_to_new_backup();
             }
 
@@ -447,17 +452,17 @@ impl Master {
                 Ok(backup_socket) => {
                     // Create channel for backup connection
                     let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
-                    spawn(|| handle_backup_connection(backup_socket, master_to_backup_rx));
+                    let (backup_disconected_tx, backup_disconected_rx) = cbc::unbounded();
+
+                    spawn(|| handle_backup_connection(backup_socket, master_to_backup_rx,backup_disconected_tx));
     
                     println!("[MASTER]\tConnected to backup at {}", backup_ip);
                     self.master_to_backup_tx = Some(master_to_backup_tx);
+                    self.backup_disconected_rx=backup_disconected_rx;
                     return;
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[MASTER]\tFailed to connect to backup at {}: {}",
-                        backup_ip, e
-                    );
+                    //eprintln!("[MASTER]\tFailed to connect to backup at {}: {}",backup_ip, e);
                     //todo!();
                 }
             }
@@ -515,13 +520,21 @@ fn handle_slave_connection(
 fn handle_backup_connection(
     mut stream: TcpStream,
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
+    backup_disconected_tx: cbc::Sender<bool>,
 ) {
     loop {
         match master_to_backup_rx.recv() {
             Ok(message) => {
                 let encoded =
                     bincode::serialize(&message).expect("Failed to serialize message to backup");
-                stream.write(&encoded).unwrap();
+                match stream.write(&encoded){
+                    Ok(_)=>{println!("[MASTER]\tSent order to backup: {:#?}", message);}
+                    Err(_)=>{
+                        eprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
+                        backup_disconected_tx.send(true);//tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                        return;
+                    }
+                }
                 println!("[MASTER]\tSent order to backup: {:#?}", message);
             }
             Err(_) => {

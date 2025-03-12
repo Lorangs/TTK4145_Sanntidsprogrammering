@@ -74,7 +74,7 @@ impl Backup {
                     // try sending error state to master so that master can initilize an other backup.
                     // if not possible, return orders and inititize self as new master.
 
-                    //return self.orders.clone();
+                    return self.orders.clone();
                 }
             }
         }
@@ -90,20 +90,37 @@ fn handle_master_connection(
 ) //-> Result<(), cbc::RecvError>
 {
     let mut encoded = [0; 1024];
+    stream
+        .set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms)))
+        .expect("Failed to set read timeout");
+
     loop {
-        //stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout");
         match stream.read(&mut encoded) {
             Ok(size) => {
                 if size > 0 {
-                    let recieved: Message =
-                        bincode::deserialize(&encoded).expect("Failed to deserialize message");
-                    master_to_backup_tx.send(recieved).unwrap();
+                    let received: Message =
+                        bincode::deserialize(&encoded[..size]).expect("Failed to deserialize message");
+                    master_to_backup_tx.send(received).unwrap();
+                }
+                else{ //e dinna so blir utført vist eg drepe master
+                    println!("[BACKUP]\t Lost conection to master");
+                    let message = Message::Error(ErrorState::Network);
+                    master_to_backup_tx.send(message).unwrap();
+                    break;
                 }
             }
-            Err(e) => {
-                println!("Error: {}", e);
-                let message = Message::Error(ErrorState::Network);
-                master_to_backup_tx.send(message).unwrap();
+            Err(e) => { // då kan vi nokk forenkle dinna litt trudde den kom til å fange opp disconecten
+                if e.kind() == std::io::ErrorKind::WouldBlock {
+                    // No data available, continue the loop
+                    println!("[BACKUP]\tNo data available");
+                    continue;
+                } else {
+                    // Connection lost or other error
+                    println!("[BACKUP]\tError: {}", e);
+                    let message = Message::Error(ErrorState::Network);
+                    master_to_backup_tx.send(message).unwrap();
+                    break;
+                }
             }
         }
     }
