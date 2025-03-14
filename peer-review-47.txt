@@ -1,77 +1,44 @@
 019fcb6b
-score:  7
-bullet point 1:
-    Consider using enum with associated information for pub const variables in prelude.rs line: {88-90 & 100-107}
-bullet point 2:
-    Consider implementing fmt::display for writeout of structs and enums instead of specific print() functions. This goes for debug functions as well. 
-bullet point 3:
-    Consider initilicing Status::target_floor to None instead of Some(u8::MAX). It makes no sense to initilize an order with specific order information (target_floor etc). The same goes for initilizing the Order struct
-bullet point 4:
-    Consider using an config file or alternatives for loading initial constants, IP adresses and ect. Makes life easier when altering project parameters.
-bullet point 5:
-    In elevator.rs: elevdirn_to_halldirn() & halldirn_to_elevdirn() & opposite_direction_hall & check_for_stop() is unnecessary functions and only used once throughout your project. 
-    These functions could be written direclty inplace to avoid unnecessary overhead cloning and borrowing of data. 
-    This goes for other similar functions as well throughout your project.
-bullet point 6:
-    Please erase unused code. There is allot of lines that is not used in your design.
-bullet point 7:
-    In elevator.rs: open_door function sleeps for 3 seconds, blocking all other incoming and outgoing commands. Could be resolved by spawning an own thread for the door timer.
-bullet point 8:
-    Consider turning lights off and on within the same function. (elevator.rs: check_lights())
-bullet point 9:
-    Consider renaming of function check_for_bottom() to reflect the actual purpous of the function. example: check_for_end_floors().
-    Same goes for order_up() on line: 24 in master.rs
-bullet poit 10:
-    In function elevator_controller() line: 305, what is the meaning of hard setting floor_number = 0? please comment or consider implementing this another way.
-bullet point 11:
-    Consistency with data types. In master.rs cost_of_order() casting from u8 to i32, then back again to u8. Please keep your data types consistant.
-bullet point 12:
-    Tips for the future:
-        - Check and sort out warnings. The rust compiler is amazing at giving feedback on everything from unused code, to nameing conventions as such.
-        - We understand this is not the final project, but we miss networking and errorhandling. What happens when an elevator dies? What happens when the master dies? Please update your README to explain the program flow of your project.
-        - Generally this is a good startingpoint for futher development. 
+7
+bullet point 1: Consider using an enum with associated information for pub const variables in prelude.rs (lines 88–90 and 100–107).
+bullet point 2: Consider implementing fmt::Display for outputting structs and enums instead of using specific print() functions. This also applies to debug functions.
+bullet point 3: Consider initializing Status::target_floor to None instead of Some(u8::MAX). It makes little sense to initialize an order with specific order information (e.g., target_floor). The same applies to initializing the Order struct.
+bullet point 4: Consider using a configuration file—or an alternative method—for loading initial constants, IP addresses, etc. This would make it easier to adjust project parameters.
+bullet point 5: In elevator.rs, the functions elevdirn_to_halldirn(), halldirn_to_elevdirn(), opposite_direction_hall, and check_for_stop() are unnecessary and are used only once throughout your project. These functions could be written directly in place to avoid unnecessary overhead from cloning and borrowing data. The same applies to other similar functions in your project.
+bullet point 6: Please remove unused code. There are many lines that are not used in your design.
+bullet point 7: In elevator.rs, the open_door function sleeps for 3 seconds, blocking all other incoming and outgoing commands. This issue could be resolved by spawning a separate thread for the door timer.
+bullet point 8: Consider toggling the lights on and off within the same function (see elevator.rs: check_lights()).
+bullet point 9: Consider renaming the function check_for_bottom() to better reflect its actual purpose—for example, check_for_end_floors(). The same applies to order_up() on line 24 in master.rs.
+bullet point 10: In the function elevator_controller() on line 305, what is the rationale for hard-setting floor_number to 0? Please comment on this or consider implementing it differently.
+bullet point 11: Ensure consistency with data types. In master.rs, cost_of_order() casts from u8 to i32 and then back to u8. Please keep your data types consistent.
+bullet point 12: Tips for the Future: Check and resolve warnings. The Rust compiler provides excellent feedback on everything from unused code to naming conventions. We understand that this is not the final project, but we miss the networking and error handling. What happens when an elevator fails? What happens when the master fails? Please update your README to explain the program flow of your project. Overall, this is a good starting point for further development.
 
-
-// Antonie skriver denne
 3701d923
-score:  8
-bullet point 1: I struggle to find out where the main program starts when running the whole system (not examples), which makes it hard to get an overview of how the system is connected on a top level. I would recommend trying to start everything from one program if possible, instead of running 3 sepperate bash programs.
-bullet point 2: Even after reading more of the code I struggle with understanding the main structure of the problem, it is peer to peer, but has a leader, a manager and a backup? So, I would recommend explaining how the modules interact at the start of the program.
-(I am ignoring the report as this should not be a part of the evaluation)
-bullet point 3: You have comments before blocks of code that explain the main tasks in many places, but it could be useful for smaller parts of the code as well like in database.rs, line 169-198 where the for loop could be collapsed when overlooking the code so it would be nice to have a comment before it. 
-bullet point 4: Some places you could clearify and shorten the comments, like in line 205-216 of database. I would recommend trying to let the code speak more for itself, or comment on what you do at a specific line, do not explain the code line by line before the code even starts. (Just have a few words on what is to be achieved)
-bullet point 5: I would recommend separating the manager and leader roles more clearly to improve readability as they can be mixed up in the current implementation
-bullet point 6: : The functions, and the naming is good and understandable.
-bullet point 7:
+8
+bullet point 1: I struggle to find where the main program starts when running the entire system (not the examples), which makes it difficult to get an overview of how the system is connected at a top level. I would recommend trying to start everything from one program if possible, instead of running three separate bash programs.
+bullet point 2: Even after reading more of the code, I still struggle to understand the main structure of the problem. It appears to be peer-to-peer but has a leader, a manager, and a backup. I would recommend explaining how the modules interact at the start of the program. (Note: I am ignoring the report, as this should not be part of the evaluation.)
+bullet point 3: You have comments before blocks of code that explain the main tasks in many places, but it could be useful to add comments for smaller parts of the code as well. For example, in database.rs (lines 169–198), where the for loop could be collapsed when reviewing the code, it would be helpful to have a brief comment before it.
+bullet point 4: In some places, you could clarify and shorten the comments—for instance, in lines 205–216 of database.rs. I would recommend letting the code speak for itself or commenting on specific lines rather than explaining the code line by line before it even starts. A few words on what is to be achieved would suffice.
+bullet point 5: I would recommend separating the manager and leader roles more clearly to improve readability, as they can be confused in the current implementation.
+bullet point 6: The functions and their naming are good and understandable.
 
-
-// William skriver denne
 dbca849d
-score:
-bullet point 1:
-bullet point 2:
-bullet point 3:
-bullet point 4:
-bullet point 5:
-bullet point 6:
-bullet point 7:
+8
+bullet point 1: Consider using a configuration file to avoid global variables. Note that CALL_COUNT is defined several times. On the other hand, the global configuration variables are few and have good names.
+bullet point 2: There is a good description of how the elevator system works. However, it is somewhat unclear whether this is a master–slave system or a peer-to-peer system. Whith a manager, but have message broadcasting.
+bullet point 3: The queues for both the manager and the individual elevators are declared as public types and are almost hidden in the code. Try to make it clearer that these are the queues by adding a comment and providing more space for them in the code.
+bullet point 4: The state machine structure is good, with clear function names and an understandable program flow.
+bullet point 5: Some hard-coded configuration variables, such as "let elev_num_floors = 4" in main.rs, should be easily fixable.
+bullet point 6: The code is nicely commented, with few unnecessary comments and concise remarks where needed.
+bullet point 7: It is smart to separate the network code from the elevator logic, but this could probably also be done in a separate module or file.
+bullet point 8: It does not seem clear to me how you handle failures and errors. Rust's error handling mechanisms are not used extensively, and the program would probably panic in many situations.
 
-// Vår egen i felleskap
 be6f64cd
-score:
-bullet point 1:
-    Clear enntry points for the program, and the different parts of it.
-bullet point 2:
-    Handlign IP-adresses and ports can be done in a more elegant way. Using rusts build in IP-adress and port types.
-bullet point 3:
-    Refining network code to be more robust, setting tcp timouts, blocking/non-blocking sockets, set_nodelay() etc.
-bullet point 3: 
-    The modules could be separated in a better way. As an example the input.rs file contains code ralated to both master and slave.
-bullet point 4:
-    Consider making more functions to make readability better. (We are struggling with rusts ownership policy)
-bullet point 5: 
-    Erro handling is missing in many places. Runtime errors have to be handled in the right way, to make the system robust. 
-bullet point 6: 
-    Review syncronization mechanisms. Do we need to use both Arc<Mutex> and channels. Something we can simplify? Consider using RWlock insted of mutex?
-
-
+8
+bullet point 1: There are clear entry points for the program and its different components.
+bullet point 2: Handling IP addresses and ports could be done in a more elegant way by using Rust's built-in IP address and port types.
+bullet point 3: Refine the network code to be more robust by setting TCP timeouts, using blocking/non-blocking sockets, and applying methods such as set_nodelay(), etc.
+bullet point 4: The modules could be separated more effectively. For example, the input.rs file contains code related to both the master and the slave.
+bullet point 5: Consider creating more functions to improve readability (we are struggling with Rust's ownership policy).
+bullet point 6: Error handling is missing in many places. Runtime errors must be handled properly to ensure that the system is robust.
+bullet point 7: Review the synchronization mechanisms. Is it necessary to use both Arc<Mutex> and channels, or can this be simplified? Consider using an RwLock instead of a Mutex.
