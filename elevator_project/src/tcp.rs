@@ -1,7 +1,7 @@
 // This file contains the TCP module, which is responsible for handling the TCP connection between the elevator and the scheduler.
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, write};
-
+use crate::slave::ElevatorState;
 use crate::master::MasterQueues;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
@@ -27,12 +27,6 @@ pub enum Message {
     Idle,
 }
 
-
-pub struct ElevatorState {
-    pub behaviour   : ElevatorBehaviour,
-    pub floor       : u8,
-    pub direction   : Direction,
-}
 
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

@@ -1,5 +1,6 @@
 use driver_rust::elevio::elev as e;
 use crossbeam_channel as cbc;
+use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
 use std::thread::{sleep, spawn};
@@ -18,7 +19,7 @@ pub struct LocalOrder {
     pub cab_call    : bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ElevatorBehaviour {
     Idle,
     Moving,
@@ -26,14 +27,31 @@ pub enum ElevatorBehaviour {
     OutOfOrder,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Direction {
     Down = -1,
     Stop = 0,
     Up = 1,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ElevatorState {
+    pub behaviour   : ElevatorBehaviour,
+    pub floor       : u8,
+    pub direction   : Direction,
+}
 
+impl Display for ElevatorState {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(
+            f,
+            "Behaviour: {:#?}, Floor: {:#?}, Direction: {:#?}",
+            self.behaviour,
+            self.floor,
+            self.direction
+        )
+    }
+}
 
 #[derive(Debug)]
 pub struct Slave {
@@ -68,7 +86,9 @@ impl Slave {
             config: conf,
             elevator: elev,
             nxt_order           : tcp::CallButton { floor: 0, call: 0 },
-            elevator_state      : ElevatorState { behaviour: ElevatorBehaviour::Idle, floor: 0, direction: Direction::Stop },
+            behaviour           : ElevatorBehaviour::Idle,
+            direction           : Direction::Stop,
+            floor               : 0,
             obstruction         : false,
             channels            : chs,
             master_channels     : None,
@@ -263,6 +283,16 @@ impl Slave {
             Direction::Stop => self.elevator.motor_direction(e::DIRN_STOP),
             Direction::Down => self.elevator.motor_direction(e::DIRN_DOWN),
             Direction::Up => self.elevator.motor_direction(e::DIRN_UP),
+        }
+    }
+
+
+    fn set_behaviour(&mut self, new_behaviour: ElevatorBehaviour) {
+        if new_behaviour != self.behaviour {
+            if new_behaviour != ElevatorBehaviour::OutOfOrder {
+                self.elevator.motor_direction(e::DIRN_STOP);
+            }
+            self.behaviour = new_behaviour;
         }
     }
 
