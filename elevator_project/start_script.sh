@@ -40,6 +40,11 @@ if ! grep -q "set -g mouse on" ~/.tmux.conf 2>/dev/null; then
     echo "Mouse mode enabled in ~/.tmux.conf"
 fi
 
+if ! grep -q "set -g focus-events on" ~/.tmux.conf 2>/dev/null; then
+    echo "set -g focus-events on" >> ~/.tmux.conf
+    echo "Focus events enabled in ~/.tmux.conf"
+fi
+
 # Reload tmux config if tmux is running
 if pgrep tmux &> /dev/null; then
     tmux source-file ~/.tmux.conf
@@ -47,7 +52,7 @@ fi
 
 
 # Start tmux session in detached mode
-tmux new-session -s elevator -n main
+tmux new-session -d -s elevator -n main
 
 # Run master_main in first pane
 tmux send-keys -t elevator:main "cargo run $release_flag --bin master_main" C-m
@@ -63,13 +68,19 @@ for port in $(seq $base_port $((base_port + num_slaves - 1))); do
     tmux split-window -h -t elevator:main
     tmux select-layout -t elevator:main tiled
     tmux send-keys "../SimElevatorServer --port=$port" C-m
+done
 
-    # Split vertically for slave_main
-    tmux split-window -v -t elevator:main
+sleep 0.5
+
+for port in $(seq $base_port $((base_port + num_slaves - 1))); do
+    # Split horizontally for slave_main
+    tmux split-window -h -t elevator:main
     tmux select-layout -t elevator:main tiled
     tmux send-keys "cargo run $release_flag --bin slave_main $port" C-m
     sleep 0.1
 done
 
+
 # Attach to the session
+tmux select-layout -t elevator:main tiled
 tmux attach -t elevator
