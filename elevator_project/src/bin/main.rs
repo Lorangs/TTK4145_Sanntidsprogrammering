@@ -1,19 +1,33 @@
 use std::process::Command;
 use std::thread::sleep;
+use std::env;
+use std::path::Path;
+
+
 
 fn main() {
-    //The plan is to make a program here that we can run when starting the computer, but we have not used it much yet
-    Command::new("cargo")
+    let args: Vec<String> = env::args().collect();
+
+    // start as master
+    if args[1] == 0 
+    {
+        Command::new("cargo")
         .args(["run", "--bin", "master_main"])
         .spawn()
         .expect("Failed to start master_main");
+    }
+    else // start backup
+    {
+        Command::new("cargo")
+        .args(["run", "--bin", "backup_main"])
+        .spawn()
+        .expect("Failed to start backup_main");
+    }
 
     sleep(std::time::Duration::from_secs(1));
 
     Command::new("cargo")
-        .args(["run", "--bin", "slave_main"])
+        .args(["run", "--bin", "slave_main", args[1]])
         .spawn()
         .expect("Failed to start slave_main");
-
-    // sleep(std::time::Duration::from_secs(10));
 }

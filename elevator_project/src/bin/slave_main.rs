@@ -5,12 +5,11 @@ use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    println!("IP:\t{}", &args[1].to_string());
     print!("trying to start a slave\n");
 
     let config = Config::read_config(Path::new("config.json")).unwrap();
 
-    let slave_ip = config.elevator_ip_list[0].to_string() + ":" + &args[1].to_string();
+    let slave_ip = config.elevator_ip_list[args[1].parse::<usize>().unwrap()].to_string() + ":" + &config.slave_port.to_string();
 
     let mut slave = Slave::init(slave_ip, &config);
     print!("Slave initialized\n");
