@@ -33,15 +33,17 @@ pub enum Direction {
     Up = 1,
 }
 
+
+
 #[derive(Debug)]
 pub struct Slave {
     pub config      : Config,
     pub elevator    : e::Elevator,
-    nxt_order       : tcp::CallButton,
-    floor           : u8,
+    pub behaviour   : ElevatorBehaviour,
+    pub direction   : Direction,
+    pub floor       : u8,
     obstruction     : bool,
-    direction       : Direction,
-    behaviour       : ElevatorBehaviour,
+    nxt_order       : tcp::CallButton,
     channels        : inputs::SlaveChannels,
     master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
     door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
@@ -65,15 +67,13 @@ impl Slave {
         let mut slave = Self {
             config: conf,
             elevator: elev,
-            nxt_order: tcp::CallButton { floor: 0, call: 0 },
-            obstruction: false,
-            floor: 0,
-            direction: Direction::Stop,
-            behaviour: ElevatorBehaviour::Idle,
-            channels: chs,
-            master_channels: None,
-            door_timer: cbc::unbounded::<bool>(),
-            light_matrix: vec![[false; 3]; config.number_of_floors as usize],
+            nxt_order           : tcp::CallButton { floor: 0, call: 0 },
+            elevator_state      : ElevatorState { behaviour: ElevatorBehaviour::Idle, floor: 0, direction: Direction::Stop },
+            obstruction         : false,
+            channels            : chs,
+            master_channels     : None,
+            door_timer          : cbc::unbounded::<bool>(),
+            light_matrix        : vec![[false; 3]; config.number_of_floors as usize],
 
             // parameter for local operation mode:
             local_orders        : [LocalOrder{
