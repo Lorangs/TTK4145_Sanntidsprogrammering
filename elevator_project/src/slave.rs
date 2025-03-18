@@ -229,7 +229,7 @@ impl Slave {
     }
 
     fn send_idle(&mut self) {
-        let message = tcp::Message::Idle(true);
+        let message = tcp::Message::Idle;
         if self.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Cannot send order.");
             return;

@@ -14,7 +14,7 @@ use crate::config::Config;
 use crate::tcp::{self, CallButton, Message};
 
 
-//flytte orders og master qy\ue sioden de brukast i backup og??
+//flytte orders og master queue siden de brukast i backup og??
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct Order {
     call_button: tcp::CallButton,
@@ -371,7 +371,7 @@ impl Master {
                                 }
                             }
 
-                            Message::Idle(state) => { // Variable not used. Do we need it?
+                            Message::Idle => {
                                 // Send next order to slave
                                 if self.order_queues.lock().unwrap().hall_queue.len() > 0
                                     || self.order_queues.lock().unwrap().cab_queues

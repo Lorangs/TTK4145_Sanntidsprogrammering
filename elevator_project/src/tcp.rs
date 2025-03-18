@@ -23,7 +23,7 @@ pub enum Message {
     LightMatrix(Vec<[bool; 3]>), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
     Error(ErrorState),
     Backup(MasterQueues),
-    Idle(bool),
+    Idle,
 }
 
 impl fmt::Display for Message {
@@ -34,7 +34,7 @@ impl fmt::Display for Message {
             Message::LightMatrix(matrix) => write!(f, "Light matrix: {:#?}", matrix),
             Message::Error(id) => write!(f, "Error: {}", id),
             Message::Backup(b) => write!(f, "Backup: {:#?}", b),
-            Message::Idle(b) => write!(f, "Idle: {}", b),
+            Message::Idle=> write!(f, "Idle"),
         }
     }
 }

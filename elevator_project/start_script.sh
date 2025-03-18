@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+#Not working currently
 # Default values
 base_port=9000
 release_flag=""
