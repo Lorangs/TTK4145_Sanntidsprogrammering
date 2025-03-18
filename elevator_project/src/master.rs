@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::tcp::{self, CallButton, Message};
+use crate::slave::{ElevatorState, Direction, ElevatorBehaviour};
 
 
 //flytte orders og master queue siden de brukast i backup og??
@@ -46,9 +47,8 @@ impl MasterQueues {
             hall_queue,
             cab_queues,
         }
-    }
-
-    
+    }  
+   
     pub fn add_to_hall_queue(&mut self, floor: u8, direction: u8) {
         match direction {
             HALL_UP => {
@@ -132,6 +132,7 @@ pub struct Master {
     pub config                      : Config,                                                                     
     pub order_queues                : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
     slave_channels                  : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,   // Vector of slave channels.
+    slave_elevator_state            : Arc<Mutex<Vec<ElevatorState>>>,
     number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
     backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
@@ -144,12 +145,12 @@ impl Master {
         master_queue: MasterQueues
     ) -> Result<Master, String> 
     {
-        let slave_channels: Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::new(Mutex::new(Vec::new()));
 
         let mut master = Master {
             config                  : config.clone(),
             order_queues            : Arc::new(Mutex::new(master_queue)),
-            slave_channels          : slave_channels,
+            slave_channels          : Arc::new(Mutex::new(Vec::new())),
+            slave_elevator_state    : Arc::new(Mutex::new(Vec::new())),
             number_of_slaves        : Arc::new(Mutex::new(0)),
             master_to_backup_tx     : None,
             backup_disconected_rx   : cbc::unbounded().1,
@@ -160,6 +161,7 @@ impl Master {
         let master_port             : u16 = config.master_port;
         let order_queues_clone      : Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
         let slave_channels_clone    : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::clone(&master.slave_channels);
+        let slave_elev_state_clone  : Arc<Mutex<Vec<ElevatorState>>> = Arc::clone(&master.slave_elevator_state);
         let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.number_of_slaves);
 
         // Thread for listening for new slave connections
@@ -170,9 +172,12 @@ impl Master {
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
                 let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
+                let mut locked_elevator_states = slave_elev_state_clone.lock().unwrap();
 
                 locked_channel.push((master_to_slave_tx, slave_to_master_rx));
                 drop(locked_channel);
+                locked_elevator_states.push(ElevatorState { behaviour: ElevatorBehaviour::Idle, floor: 0, direction: Direction::Stop });
+                drop(locked_elevator_states);
 
                 let mut locked_num_slaves = num_slaves_clone.lock().unwrap();
                 *locked_num_slaves += 1;
@@ -224,6 +229,10 @@ impl Master {
         Message::LightMatrix(new_matrix)
     }
 
+    fn hall_request_assigner(&mut self) {
+
+    }
+
     // Main application loop for master (state machine). Should be refactored to be more readable.
     pub fn master_loop(&mut self) {
         loop {
@@ -234,9 +243,9 @@ impl Master {
                 self.try_connect_to_new_backup();
             }
 
-            let locked_num_slaves = *self.number_of_slaves.lock().unwrap();
+            let mut locked_num_slaves = *self.number_of_slaves.lock().unwrap();
             for slave_number in 0..locked_num_slaves {
-                let locked_channels = self.slave_channels.lock().unwrap();
+                let mut locked_channels = self.slave_channels.lock().unwrap();
                 match locked_channels[slave_number as usize].1.try_recv() {
                     Ok(message) => {
                         match message {
@@ -418,6 +427,19 @@ impl Master {
                                     }
                                 }
                             }
+                            
+                            // Recieves an updated state from slave
+                            Message::StateUpdate(new_state) => {
+                                self.slave_elevator_state.lock().unwrap()[slave_number as usize] = new_state;
+                            }
+
+                            // Removes an disconected slave
+                            Message::Error(_e) => {
+                                locked_channels.remove(slave_number as usize);
+                                self.slave_elevator_state.lock().unwrap().remove(slave_number as usize);
+                                locked_num_slaves -= 1;
+                                
+                            }
                             _ => {
                                 println!(
                                     "[MASTER]\tReceived unexpected message from slave {:#?}",
@@ -425,12 +447,10 @@ impl Master {
                                 );
                                 todo!();
                             }
+
                         }
                     }
-                    Err(_) => {
-                        //println!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                        //todo!();
-                    }
+                    Err(_) => {}
                 }
             }
 
@@ -485,7 +505,6 @@ fn handle_slave_connection(
         .set_nonblocking(true)
         .expect("Failed to set non-blocking mode on stream");
     loop {
-
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
@@ -496,8 +515,13 @@ fn handle_slave_connection(
                 }
             }
             Err(e) => {
-                //eprintln!("[MASTER]\tFailed to recieve message from slave: {}", e);
-                //todo!();
+                match e.kind() {
+                    std::io::ErrorKind::WouldBlock => { /* println!("[SLAVE]\t\tNo data available"); */ }
+                    _ => {
+                        println!("[SLAVE]\t\tFailed to read from stream: {}", e);
+                        slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                    }
+                }
             }
         }
 
@@ -505,12 +529,16 @@ fn handle_slave_connection(
             Ok(message) => {
                 let encoded =
                     bincode::serialize(&message).expect("Failed to serialize message to slave");
-                stream.write(&encoded).unwrap();
+                match stream.write(&encoded) {
+                    Ok(_) => {},
+                    Err(_e) => {
+                        slave_to_master_tx.send(Message::Error(tcp::ErrorState::Network)).unwrap();
+                    }
+                }
                 println!("[MASTER]\tSent message to slave: {:#?}", message);
             }
-            Err(_) => {
-                //eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                //todo!();
+            Err(_e) => {
+                continue;
             }
         }
     }
