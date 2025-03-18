@@ -64,7 +64,7 @@ impl MasterQueues {
                 });
             }
             _ => {
-                eprintln!("[MASTER]\tInvalid direction: {}", direction);
+                println!("[MASTER]\tInvalid direction: {}", direction);
                 todo!();
             }
         }
@@ -82,8 +82,8 @@ impl MasterQueues {
             self.cab_queues[slave_number as usize].pop_front();
         } else {
             for i in 0..self.hall_queue.len() {
-                if self.hall_queue[i].call_button.floor == order.call_button.floor
-                    && self.hall_queue[i].call_button.call == order.call_button.call
+                if  self.hall_queue[i].call_button.floor == order.call_button.floor &&
+                    self.hall_queue[i].call_button.call  == order.call_button.call
                 {
                     self.hall_queue.remove(i);
                     break;
@@ -134,7 +134,7 @@ pub struct Master {
     slave_channels                  : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,   // Vector of slave channels.
     number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
-    backup_disconected_rx           : cbc::Receiver<bool>,                                         // Channel for sending messages to backup
+    backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
 }
 
 impl Master {
@@ -226,8 +226,6 @@ impl Master {
 
     // Main application loop for master (state machine). Should be refactored to be more readable.
     pub fn master_loop(&mut self) {
-        
-        
         loop {
             if self.backup_disconected_rx.try_recv().is_ok() {
                 self.master_to_backup_tx = None;

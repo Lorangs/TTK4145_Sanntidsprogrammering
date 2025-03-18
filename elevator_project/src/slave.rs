@@ -115,7 +115,6 @@ impl Slave {
         if slave.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
         }
-        println!("[SLAVE]\t\tInitialized slave:\n{}", slave);
         return slave;
     }
 
@@ -243,8 +242,8 @@ impl Slave {
 
     // Choose direction based on next order and start moving. 
     fn start_moving_normal(&mut self) {
-        if self.behaviour == ElevatorBehaviour::DoorOpen
-            || self.behaviour == ElevatorBehaviour::OutOfOrder
+        if  self.behaviour == ElevatorBehaviour::DoorOpen || 
+            self.behaviour == ElevatorBehaviour::OutOfOrder
         {
             // Do nothing if the elevator is out of order or the door is open
             return;
