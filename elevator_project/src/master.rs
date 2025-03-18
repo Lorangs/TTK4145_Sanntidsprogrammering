@@ -14,11 +14,11 @@ use crate::config::Config;
 use crate::tcp::{self, CallButton, Message};
 
 
-
+//flytte orders og master qy\ue sioden de brukast i backup og??
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct Order {
     call_button: tcp::CallButton,
-    in_progress: bool,
+    pub in_progress: bool,     //Ditta e kansje ikkje so bra?? måtte gjer det får å endre i backup
 }
 
 impl FmtDisplay for Order {

@@ -128,7 +128,7 @@ impl Slave {
                 Ok(stream) => {
                     println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
                     self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
-                    //send cab cue to master
+                    //send cab cue to master Hær kan vi ta med hall orders og!
                     let mut call_buttons_to_send = Vec::new();
                     for (floor, order) in self.local_orders.iter().enumerate() {
                         if order.cab_call { //eller skal vi ta med alt?
@@ -472,18 +472,20 @@ impl Slave {
 
     /************ functions for local operation mode **************/
 
-    fn orders_above(&self) -> bool{
+    fn orders_above(&mut self) -> bool{
         for floor in (self.floor + 1) .. self.config.number_of_floors {
             if self.local_orders[floor as usize].hall_down || self.local_orders[floor as usize].hall_up || self.local_orders[floor as usize].cab_call {
+                self.nxt_order = tcp::CallButton { floor: floor, call: 2};
                 return true;
             }
         }
         return false;   
     }
 
-    fn orders_below(&self) -> bool {
+    fn orders_below(&mut self) -> bool {
         for floor in 0 .. self.floor {
             if self.local_orders[floor as usize].hall_down || self.local_orders[floor as usize].hall_up || self.local_orders[floor as usize].cab_call {
+                self.nxt_order = tcp::CallButton { floor: floor, call: 2};
                 return true;
             }  
         }
@@ -497,7 +499,7 @@ impl Slave {
             self.local_orders[self.floor as usize].cab_call;
     }
 
-    fn should_stop(&self) -> bool{
+    fn should_stop(&mut self) -> bool{
         match self.direction{
             Direction::Down => {
                 self.local_orders[self.floor as usize].hall_down ||
@@ -513,7 +515,7 @@ impl Slave {
         }
     }
 
-    fn choose_direction(&self) -> (Direction, ElevatorBehaviour) {
+    fn choose_direction(&mut self) -> (Direction, ElevatorBehaviour) {
         match self.direction {
             Direction::Up => { return
                 if      self.orders_above() { ( Direction::Up,   ElevatorBehaviour::Moving ) }

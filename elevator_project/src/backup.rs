@@ -63,6 +63,20 @@ impl Backup {
                         }
                         Message::Error(ErrorState::Network) => {
                             println!("[BACKUP]\tMaster disconnected");
+                            //make all in progress=flase
+                            //ikkje veldig elegant
+                            for i in 0..self.orders.hall_queue.len() {
+                                if self.orders.hall_queue[i].in_progress == true {
+                                    self.orders.hall_queue[i].in_progress = false;
+                                }
+                            }
+                            for i in 0..self.orders.cab_queues.len() {
+                                for j in 0..self.orders.cab_queues[i].len() {
+                                    if self.orders.cab_queues[i][j].in_progress == true {
+                                        self.orders.cab_queues[i][j].in_progress = false;
+                                    }
+                                }
+                            }
                             return self.orders.clone();
                         }
                         _ => {} // Do nothing for other types of incoming messages.
