@@ -328,7 +328,6 @@ impl Slave {
 
             /**************local operation mode***************/
             if self.master_channels.is_none() {
-
                 cbc::select! {
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
@@ -505,7 +504,13 @@ impl Slave {
                                 println!("[SLAVE]\t\tReceived error message from master"); 
                                 println!("[SLAVE]\t\tStarting in local operating mode");
                                 self.master_channels = None;
-                                if self.state.behaviour == ElevatorBehaviour::Idle{ //fiksa sånn at du ikkje må trykke to ganga
+
+                                // turn off all hall lights since we are in local mode and no longer take hall orders
+                                for i in 0..NUMBER_OF_FLOORS {
+                                    self.elevator.call_button_light(i, e::HALL_UP, false);
+                                    self.elevator.call_button_light(i, e::HALL_DOWN, false);
+                                }
+                                if self.state.behaviour == ElevatorBehaviour::Idle{ 
                                     self.sync_lights_local();
                                     self.start_moving_local();
                                 }
@@ -618,6 +623,7 @@ impl Slave {
         }
     }
 
+    
     fn sync_lights_local(&self) {
         for (floor, order) in self.state.cab_requests.iter().enumerate() {
             self.elevator.call_button_light(floor as u8, e::CAB,        *order);
