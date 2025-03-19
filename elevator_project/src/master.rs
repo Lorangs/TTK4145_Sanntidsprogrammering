@@ -3,7 +3,7 @@
 use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use serde_json::Map;
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -11,6 +11,8 @@ use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Duration;
+use std::process::Command;
+use std::collections::HashMap;
 
 use crate::config::Config;
 use crate::tcp::{self, CallButton, Message};
@@ -19,24 +21,23 @@ use crate::slave::{self, Direction, ElevatorBehaviour, ElevatorState};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
-    pub hall_requests       : Vec<(bool, bool)>,   
-    pub elevator_states     : Vec<ElevatorState>,
+    pub hallRequests       : Vec<[bool; 2]>,   
+    pub states     : Vec<ElevatorState>,
 }
-
+//endre navn?
 impl MasterQueues {
     pub fn init() -> MasterQueues {
-        let hall_requests   : Vec<(bool, bool)> = Vec::new(); 
-        let elevator_states : Vec<ElevatorState> = Vec::new();
+        let hallRequests   : Vec<[bool; 2]> = vec![[false; 2]; slave::NUMBER_OF_FLOORS as usize];
+        let states : Vec<ElevatorState> = Vec::new();
 
         MasterQueues {
-            hall_requests,
-            elevator_states,
+            hallRequests,
+            states,
         }
     }  
 
     pub fn add_new_elevator(&mut self) {
-        self.hall_requests.push((false, false));
-        self.elevator_states.push(ElevatorState { 
+        self.states.push(ElevatorState { 
             behaviour: ElevatorBehaviour::Idle, 
             floor: 0, 
             direction: Direction::Stop, 
@@ -45,51 +46,110 @@ impl MasterQueues {
     }
 
     pub fn remove_elevator(&mut self, slave_number: u8) {
-        self.hall_requests.remove(slave_number as usize);
-        self.elevator_states.remove(slave_number as usize);
+        self.states.remove(slave_number as usize);
     }
 
     pub fn update_elevator_state(&mut self, new_state: ElevatorState, slave_number: u8) {
-        self.elevator_states[slave_number as usize] = new_state;
+        self.states[slave_number as usize] = new_state;
     }
 
-
-    pub fn get_next_order(&mut self, slave_number: u8) -> tcp::CallButton{
-        // run the optimization algorithm
-        // return the next order for the slave
-
-
-    }
-
-    fn to_custom_json(&self) -> String {
-        use serde_json::{json, Value, Map};
-
-        // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
-        let hall_requests: Vec<Value> = self.hall_requests
-            .iter()
-            .map(|&(up, down)| json!([up, down]))
-            .collect();
-
-        let mut states = Map::new();
-        for (i, state) in self.elevator_states.iter().enumerate() {
-            
-        }
-
-    }
-
-    pub fn update_hall_requests(&mut self, slave_number: u8, call: tcp::CallButton) {
+    pub fn update_hall_requests(&mut self, call: tcp::CallButton, remove_or_add: bool) { //beire navn, men true for add, false for remove
         match call.call {
             HALL_UP => {
-                self.hall_requests[slave_number as usize].0 = true;
+                self.hallRequests[call.floor as usize][0] = remove_or_add;
             }
             HALL_DOWN => {
-                self.hall_requests[slave_number as usize].1 = true;
+                self.hallRequests[call.floor as usize][1] = remove_or_add;
             }
             _ => {
                 println!("[MASTER]\tGot cab call from slave. Exeting");
                 return;
             }
         }
+    }
+
+    pub fn get_next_order(&mut self, elevator_number: u8) -> Option<CallButton> {
+        // run the optimization algorithm
+        // return the next order for the slaves
+        let mut orders: HashMap<String, Vec<[bool; 3]>>;
+
+        let input = self.to_custom_json();
+        println!("{}", input);
+
+        let output = Command::new("../hall_request_assigner")
+            .args(["--includeCab", "--input"])
+            .arg(input)
+            .output()
+            .expect("Failed to start hall_request_assigner");
+        
+        
+        if output.status.success() {
+            orders = serde_json::from_slice(&output.stdout).unwrap();
+        } 
+        else { return None; }
+
+        println!( "{:#?}", orders);
+        
+
+        let elevator= self.states[elevator_number as usize].clone();
+
+
+        match elevator.direction {
+            Direction::Down => {
+                for i in elevator.floor..0 {
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        return Some(CallButton { floor: i as u8, call: CAB });
+                    }
+                }
+            }
+            Direction::Up => {
+                for i in elevator.floor..slave::NUMBER_OF_FLOORS {
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        return Some(CallButton { floor: i as u8, call: CAB });
+                    }
+                }
+            }
+            Direction::Stop => {
+                for i in elevator.floor..slave::NUMBER_OF_FLOORS {
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        return Some(CallButton{ floor: i as u8, call: CAB });
+                    }
+                }
+                for i in (elevator.floor .. 0).rev() {
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        return Some(CallButton { floor: i as u8, call: CAB });
+                    }
+                }
+            }
+        }
+        return None; 
+    }
+
+
+    fn to_custom_json(&self) -> String {
+        use serde_json::{json, Value, Map};
+        // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
+        let hall_requests: Vec<Value> = self.hallRequests
+            .iter()
+            .map(|x| json!([x[0], x[1]]))
+            .collect();
+
+        let mut states = Map::new();
+        for (key, state) in self.states.iter().enumerate() {
+            let state_object = json!({
+                "floor": state.floor,
+                "behaviour": state.behaviour.to_ascii_lowercase(),
+                "direction": state.direction.to_ascii_lowercase(),
+                "cabRequests": state.cab_requests,
+            });
+            states.insert(key.to_string(), state_object);
+        }
+
+        let result = json!({
+            "hallRequests": hall_requests,
+            "states": states,
+        }); 
+        serde_json::to_string(&result).unwrap()
     }
 }
 
@@ -100,7 +160,7 @@ impl FmtDisplay for MasterQueues {
             f,
             "Hall queue: {:?}\n\
             Cab queues: {:?}",
-            self.hall_queue, self.cab_queues
+            self.hallRequests, self.states
         )
     }
 }
@@ -108,7 +168,8 @@ impl FmtDisplay for MasterQueues {
 #[derive(Debug)]
 pub struct Master {
     pub config                      : Config,                                                                     
-    pub order_queues                : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
+    pub requests                    : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
+    //orders                          : Vec<[bool; 3]>,                                                    // Vector of slaves order queues
     slave_channels                  : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,   // Vector of slave channels.
     number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
@@ -125,9 +186,9 @@ impl Master {
 
         let mut master = Master {
             config                  : config.clone(),
-            order_queues            : Arc::new(Mutex::new(master_queue)),
+            requests                : Arc::new(Mutex::new(master_queue)),
+            //orders                  : Vec::new(),
             slave_channels          : Arc::new(Mutex::new(Vec::new())),
-            slave_elevator_state    : Arc::new(Mutex::new(Vec::new())),
             number_of_slaves        : Arc::new(Mutex::new(0)),
             master_to_backup_tx     : None,
             backup_disconected_rx   : cbc::unbounded().1,
@@ -136,10 +197,9 @@ impl Master {
         master.try_connect_to_new_backup();
 
         let master_port             : u16 = config.master_port;
-        let order_queues_clone      : Arc<Mutex<MasterQueues>> = Arc::clone(&master.order_queues);
         let slave_channels_clone    : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::clone(&master.slave_channels);
-        let slave_elev_state_clone  : Arc<Mutex<Vec<ElevatorState>>> = Arc::clone(&master.slave_elevator_state);
         let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.number_of_slaves);
+        let requests_clone          : Arc<Mutex<MasterQueues>> = Arc::clone(&master.requests);
 
         // Thread for listening for new slave connections
         spawn(move || {
@@ -148,23 +208,19 @@ impl Master {
             for stream in listener.incoming() {
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
                 let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
+                
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
-                let mut locked_elevator_states = slave_elev_state_clone.lock().unwrap();
-
                 locked_channel.push((master_to_slave_tx, slave_to_master_rx));
                 drop(locked_channel);
-                locked_elevator_states.push(ElevatorState { behaviour: ElevatorBehaviour::Idle, floor: 0, direction: Direction::Stop });
-                drop(locked_elevator_states);
 
                 let mut locked_num_slaves = num_slaves_clone.lock().unwrap();
                 *locked_num_slaves += 1;
                 drop(locked_num_slaves);
 
-                order_queues_clone
-                    .lock()
-                    .unwrap()
-                    .cab_queues
-                    .push(VecDeque::new());
+                let mut locked_requests = requests_clone.lock().unwrap();
+                locked_requests.add_new_elevator();
+                drop(locked_requests);
+
                 println!("[MASTER]\tGot new stream");
 
                 match stream {
@@ -189,25 +245,34 @@ impl Master {
 
     // Returns a 3 x num_floors matrix for updating panel lights. 
     // 3 x num_floors matrix for [hall up, hall down, cab] lights.
-    fn make_light_matrix(&self, slave_number: u8, orders: MasterQueues) -> tcp::Message {
+    fn make_light_matrix(&self, slave_number: u8, requests: MasterQueues) -> tcp::Message {
         let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
 
-        for order in orders.hall_queue.iter() {
-            new_matrix[order.call_button.floor as usize][order.call_button.call as usize] = true;
+        for (floor, hall_call) in requests.hallRequests.iter().enumerate() {
+            match hall_call {
+                [false, false] => {
+                    new_matrix[floor][0] = false;
+                    new_matrix[floor][1] = false;
+                }
+                [true, false] => {
+                    new_matrix[floor][0] = true;
+                }
+                [false, true] => {
+                    new_matrix[floor][1] = true;
+                }
+                [true, true] => {
+                    new_matrix[floor][0] = true;
+                    new_matrix[floor][1] = true;
+                }
+            }
         }
 
-        if orders.cab_queues.len() > 0 {
-            orders.cab_queues[slave_number as usize]
-                .iter()
-                .for_each(|order| {
-                    new_matrix[order.call_button.floor as usize][2] = true;
-                });
+        for (floor, cab_call) in requests.states[slave_number as usize].cab_requests.iter().enumerate() {
+            if *cab_call{
+                new_matrix[floor][2] = true;
+            }
         }
         Message::LightMatrix(new_matrix)
-    }
-
-    fn optimized_hall_assigner(&mut self) {
-
     }
 
     // Main application loop for master (state machine). Should be refactored to be more readable.
@@ -226,84 +291,45 @@ impl Master {
                 match locked_channels[slave_number as usize].1.try_recv() {
                     Ok(message) => {
                         match message {
-                            Message::NewOrder(call_button) => {
-                                if call_button.call == CAB  
-                                {
-                                    let mut orders_locked = self.order_queues.lock().unwrap();
-                                    orders_locked.add_to_cab_queue(slave_number, call_button.floor);
+                            Message::NewOrder(call_button) => {// ditta vil altid vær en hall order no, sant?, so fjerna cab delen
+                                let mut requests_locked = self.requests.lock().unwrap();
+                                requests_locked
+                                    .update_hall_requests(call_button, true);
+                                println!("[MASTER]\tAdded order to hall queue: {}",call_button);
 
-                                    println!("[MASTER]\tAdded order to cab queue: {}", call_button);
-
-                                    if self.master_to_backup_tx.is_some() {
-                                        match self
-                                            .master_to_backup_tx
-                                            .as_mut()
-                                            .unwrap()
-                                            .send(Message::Backup(orders_locked.clone()))
-                                        {
-                                            Ok(_) => {
+                                if self.master_to_backup_tx.is_some() { //opdater backup, so alle slava
+                                    match self
+                                        .master_to_backup_tx
+                                        .as_mut()
+                                        .unwrap()
+                                        .send(Message::Backup(requests_locked.clone()))
+                                    {
+                                        Ok(_) => {
+                                            // Send lightmatrix to all slaves
+                                            for i in 0..locked_num_slaves {
                                                 let light_matrix = self.make_light_matrix(
-                                                    slave_number,
-                                                    orders_locked.clone(),
+                                                    i,
+                                                    requests_locked.clone(),
                                                 );
-                                                locked_channels[slave_number as usize]
+                                                locked_channels[i as usize]
                                                     .0
                                                     .send(light_matrix)
                                                     .unwrap();
-                                                println!("[MASTER]\tSent light matrix to slave");
-                                            }
-                                            Err(_) => {
                                                 println!(
-                                                    "[MASTER]\tFailed to send order to backup"
+                                                    "[MASTER]\tSent light matrix to slave {}",
+                                                    i
                                                 );
-                                                self.master_to_backup_tx = None;
                                             }
+                                            println!(
+                                                "[MASTER]\tAdded order to hall queue: {}:{}",
+                                                call_button.floor, call_button.call
+                                            );
                                         }
-                                    }
-                                } else // Message is a hall call
-                                {
-                                    let mut orders_locked = self.order_queues.lock().unwrap();
-                                    orders_locked
-                                        .add_to_hall_queue(call_button.floor, call_button.call);
-                                    println!(
-                                        "[MASTER]\tAdded order to hall queue: {}",
-                                        call_button
-                                    );
-
-                                    if self.master_to_backup_tx.is_some() {
-                                        match self
-                                            .master_to_backup_tx
-                                            .as_mut()
-                                            .unwrap()
-                                            .send(Message::Backup(orders_locked.clone()))
-                                        {
-                                            Ok(_) => {
-                                                // Send lightmatrix to all slaves
-                                                for i in 0..locked_num_slaves {
-                                                    let light_matrix = self.make_light_matrix(
-                                                        i,
-                                                        orders_locked.clone(),
-                                                    );
-                                                    locked_channels[i as usize]
-                                                        .0
-                                                        .send(light_matrix)
-                                                        .unwrap();
-                                                    println!(
-                                                        "[MASTER]\tSent light matrix to slave {}",
-                                                        i
-                                                    );
-                                                }
-                                                println!(
-                                                    "[MASTER]\tAdded order to hall queue: {}:{}",
-                                                    call_button.floor, call_button.call
-                                                );
-                                            }
-                                            Err(_) => {
-                                                println!(
-                                                    "[MASTER]\tFailed to send order to backup"
-                                                );
-                                                self.master_to_backup_tx = None;
-                                            }
+                                        Err(_) => {
+                                            println!(
+                                                "[MASTER]\tFailed to send order to backup"
+                                            );
+                                            self.master_to_backup_tx = None;
                                         }
                                     }
 
@@ -311,18 +337,10 @@ impl Master {
                                 }
                             }
 
-                            // todo: implement order complete for specific order
-                            // make function pop index from queue (hall or cab at floor)
                             Message::OrderComplete(call_button) => {
-                                let mut orders_locked = self.order_queues.lock().unwrap();
+                                let mut requests_locked = self.requests.lock().unwrap();
 
-                                orders_locked.pop_order(
-                                    Order {
-                                        call_button: { call_button },
-                                        in_progress: true,
-                                    },
-                                    slave_number,
-                                );
+                                requests_locked.update_hall_requests(call_button,false);
 
                                 if self.master_to_backup_tx.is_some() {
                                     // Send updated order list to backup
@@ -330,12 +348,12 @@ impl Master {
                                         .master_to_backup_tx
                                         .as_mut()
                                         .unwrap()
-                                        .send(Message::Backup(orders_locked.clone()))
+                                        .send(Message::Backup(requests_locked.clone()))
                                     {
                                         Ok(_) => {
                                             for i in 0..locked_num_slaves {
                                                 let light_matrix = self
-                                                    .make_light_matrix(i, orders_locked.clone());
+                                                    .make_light_matrix(i, requests_locked.clone());
                                                 locked_channels[i as usize]
                                                     .0
                                                     .send(light_matrix)
@@ -357,63 +375,53 @@ impl Master {
 
                             Message::Idle => {
                                 // Send next order to slave
-                                if self.order_queues.lock().unwrap().hall_queue.len() > 0
-                                    || self.order_queues.lock().unwrap().cab_queues
-                                        [slave_number as usize]
-                                        .len()
-                                        > 0
-                                {
-                                    if self.master_to_backup_tx.is_some() {
-                                        let mut orders_locked = self.order_queues.lock().unwrap();
-                                        let nxt_order = orders_locked.get_next_order(slave_number);
-                                        match nxt_order {
-                                            Some(_) => {
-                                                match self
-                                                    .master_to_backup_tx
-                                                    .as_mut()
-                                                    .unwrap()
-                                                    .send(Message::Backup(orders_locked.clone()))
-                                                {
-                                                    Ok(_) => {
-                                                        let message = Message::NewOrder(
-                                                            nxt_order.unwrap().call_button,
-                                                        );
-                                                        locked_channels[slave_number as usize]
-                                                            .0
-                                                            .send(message)
-                                                            .unwrap();
-                                                        println!(
-                                                            "[MASTER]\t New order message sent"
-                                                        );
-                                                    }
-                                                    Err(_) => {
-                                                        println!("[MASTER]\tFailed to send order to backup");
-                                                        println!(
-                                                            "[MASTER]\tConnecting to a new backup."
-                                                        );
-                                                        self.master_to_backup_tx = None;
-                                                        todo!();
-                                                    }
-                                                }
-                                            }
-                                            None => {
-                                                //todo!();
-                                                println!("[MASTER]\tNo orders available for slave {}", slave_number);
-                                            }
-                                        }
+                                let mut request_locked = self.requests.lock().unwrap();
+                                let nxt_order = request_locked.get_next_order(slave_number);
+                                match nxt_order {
+                                    Some(_) => {
+                                        let message = Message::NewOrder(nxt_order.unwrap());
+                                        locked_channels[slave_number as usize]
+                                            .0
+                                            .send(message)
+                                            .unwrap();
+                                        println!(
+                                            "[MASTER]\t New order message sent"
+                                        );
+                                    }
+                                    None => {
+                                        //todo!();
+                                        println!("[MASTER]\tNo orders available for slave {}", slave_number);
                                     }
                                 }
                             }
                             
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
-                                self.slave_elevator_state.lock().unwrap()[slave_number as usize] = new_state;
+                                let mut request_locked = self.requests.lock().unwrap();
+                                request_locked.states[slave_number as usize] = new_state;
+                                let nxt_order = request_locked.get_next_order(slave_number);
+                                match nxt_order {
+                                    Some(_) => {
+                                        let message = Message::NewOrder(nxt_order.unwrap());
+                                        locked_channels[slave_number as usize]
+                                            .0
+                                            .send(message)
+                                            .unwrap();
+                                        println!(
+                                            "[MASTER]\t New order message sent"
+                                        );
+                                    }
+                                    None => {
+                                        //todo!();
+                                        println!("[MASTER]\tNo orders available for slave {}", slave_number);
+                                    }
+                                }
                             }
 
                             // Removes an disconected slave
                             Message::Error(_e) => {
                                 locked_channels.remove(slave_number as usize);
-                                self.slave_elevator_state.lock().unwrap().remove(slave_number as usize);
+                                self.requests.lock().unwrap().remove_elevator(slave_number); //kan hende vi ikkje kan fjerne i tilfelle den har mista strøm og kjem tilbake
                                 locked_num_slaves -= 1;
                                 
                             }

@@ -26,12 +26,31 @@ pub enum ElevatorBehaviour {
     DoorOpen,
     OutOfOrder,
 }
+impl ElevatorBehaviour{
+    pub fn to_ascii_lowercase(self) -> &'static str{
+        match self {
+            ElevatorBehaviour::Idle => "idle",
+            ElevatorBehaviour::Moving => "moving",
+            ElevatorBehaviour::DoorOpen => "door_open",
+            ElevatorBehaviour::OutOfOrder => "out_of_order",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Direction {
     Down = -1,
     Stop = 0,
     Up = 1,
+}
+impl Direction {
+    pub fn to_ascii_lowercase(self) -> &'static str{
+        match self {
+            Direction::Down => "down",
+            Direction::Stop => "stop",
+            Direction::Up => "up",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -222,7 +241,6 @@ impl Slave {
             Ok(_) => {},
             Err(e) => println!("[SLAVE]\t\tFailed to send order complete: {}", e),
         }
-
     }
 
     fn send_stop_button(&mut self) {
