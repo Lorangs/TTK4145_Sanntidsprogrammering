@@ -1,6 +1,5 @@
-// This file contains the TCP module, which is responsible for handling the TCP connection between the elevator and the scheduler.
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, write};
+use std::fmt::{Display as FmtDisplay, Result as FmtResult, Formatter as FmtFormatter};
 use crate::slave::ElevatorState;
 use crate::master::MasterQueues;
 
@@ -10,8 +9,8 @@ pub struct CallButton {
     pub call: u8, // 0: UP, 1: DOWN, 2: CAB
 }
 
-impl fmt::Display for CallButton {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtDisplay for CallButton {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         write!(f, "Floor: {}, Call: {}", self.floor, self.call)
     }
 }
@@ -28,12 +27,12 @@ pub enum Message {
 }
 
 
-impl fmt::Display for Message {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtDisplay for Message {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
             Message::NewOrder(call_button) => write!(f, "New Order: {}", call_button),
             Message::OrderComplete(call_button) => write!(f, "Order complete: {}", call_button),
-            Message::LightMatrix(matrix) => write!(f, "Light matrix"),
+            Message::LightMatrix(_matrix) => write!(f, "Light matrix"),
             Message::Error(id) => write!(f, "Error: {}", id),
             Message::Backup(b) => write!(f, "Backup: {:#?}", b),
             Message::StateUpdate(state) => write!(f, "State update: {}", state),
@@ -51,8 +50,8 @@ pub enum ErrorState {
     NoMaster,
 }
 
-impl fmt::Display for ErrorState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtDisplay for ErrorState {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
             ErrorState::OK => write!(f, "OK"),
             ErrorState::EmergancyStop => write!(f, "Emergancy stop"),

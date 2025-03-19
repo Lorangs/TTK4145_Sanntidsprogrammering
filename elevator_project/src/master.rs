@@ -32,10 +32,12 @@ impl FmtDisplay for Order {
     }
 }
 
+
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
     pub hall_queue: VecDeque<Order>, 
-    pub cab_queues: Vec<VecDeque<Order>>, // Vector of slave queues for internal cab calls. Index corresponds to slave number
+    pub cab_queues: Vec<VecDeque<Order>>,        // Vector of slave queues for internal cab calls. Index corresponds to slave number
 }
 
 impl MasterQueues {
@@ -229,7 +231,7 @@ impl Master {
         Message::LightMatrix(new_matrix)
     }
 
-    fn hall_request_assigner(&mut self) {
+    fn optimized_hall_assigner(&mut self) {
 
     }
 
@@ -390,7 +392,7 @@ impl Master {
                                         let mut orders_locked = self.order_queues.lock().unwrap();
                                         let nxt_order = orders_locked.get_next_order(slave_number);
                                         match nxt_order {
-                                            Some(order) => {
+                                            Some(_) => {
                                                 match self
                                                     .master_to_backup_tx
                                                     .as_mut()
@@ -481,16 +483,11 @@ impl Master {
                     self.backup_disconected_rx=backup_disconected_rx;
                     return;
                 }
-                Err(e) => {
-                    //eprintln!("[MASTER]\tFailed to connect to backup at {}: {}",backup_ip, e);
-                    //todo!();
-                }
+                Err(_e) => { continue; }
             }
         }
     }
 }
-
-
 
 
 
@@ -559,7 +556,7 @@ fn handle_backup_connection(
                     Ok(_)=>{println!("[MASTER]\tSent order to backup: {:#?}", message);}
                     Err(_)=>{
                         eprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
-                        backup_disconected_tx.send(true);//tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                        backup_disconected_tx.send(true).unwrap();//tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
                         return;
                     }
                 }
