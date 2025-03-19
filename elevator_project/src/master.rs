@@ -1,3 +1,5 @@
+
+
 use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
@@ -12,107 +14,81 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::tcp::{self, CallButton, Message};
-use crate::slave::{ElevatorState, Direction, ElevatorBehaviour};
-
-
-//flytte orders og master queue siden de brukast i backup og??
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-pub struct Order {
-    call_button: tcp::CallButton,
-    pub in_progress: bool,     //Ditta e kansje ikkje so bra?? måtte gjer det får å endre i backup
-}
-
-impl FmtDisplay for Order {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "Order: {}, progress: {}",
-            self.call_button, self.in_progress
-        )
-    }
-}
-
+use crate::slave::{self, Direction, ElevatorBehaviour, ElevatorState};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
-    pub hall_queue: VecDeque<Order>, 
-    pub cab_queues: Vec<VecDeque<Order>>,        // Vector of slave queues for internal cab calls. Index corresponds to slave number
+    pub hall_requests       : Vec<(bool, bool)>,   
+    pub elevator_states     : Vec<ElevatorState>,
 }
 
 impl MasterQueues {
     pub fn init() -> MasterQueues {
-        let hall_queue: VecDeque<Order> = VecDeque::new(); 
-        let cab_queues: Vec<VecDeque<Order>> = Vec::new(); 
+        let hall_requests   : Vec<(bool, bool)> = Vec::new(); 
+        let elevator_states : Vec<ElevatorState> = Vec::new();
 
         MasterQueues {
-            hall_queue,
-            cab_queues,
+            hall_requests,
+            elevator_states,
         }
     }  
-   
-    pub fn add_to_hall_queue(&mut self, floor: u8, direction: u8) {
-        match direction {
-            HALL_UP => {
-                self.hall_queue.push_back(Order {
-                    call_button: CallButton { floor, call: HALL_UP },
-                    in_progress: false,
-                });
-            }
-            HALL_DOWN => {
-                self.hall_queue.push_back(Order {
-                    call_button: CallButton { floor, call: HALL_DOWN },
-                    in_progress: false,
-                });
-            }
-            _ => {
-                println!("[MASTER]\tInvalid direction: {}", direction);
-                todo!();
-            }
-        }
-    }
 
-    pub fn add_to_cab_queue(&mut self, slave_num: u8, floor: u8) {
-        self.cab_queues[slave_num as usize].push_back(Order {
-            call_button: CallButton { floor, call: CAB },
-            in_progress: false,
+    pub fn add_new_elevator(&mut self) {
+        self.hall_requests.push((false, false));
+        self.elevator_states.push(ElevatorState { 
+            behaviour: ElevatorBehaviour::Idle, 
+            floor: 0, 
+            direction: Direction::Stop, 
+            cab_requests: [false; slave::NUMBER_OF_FLOORS as usize]
         });
     }
 
-    pub fn pop_order(&mut self, order: Order, slave_number: u8) {
-        if order.call_button.call == 2 {
-            self.cab_queues[slave_number as usize].pop_front();
-        } else {
-            for i in 0..self.hall_queue.len() {
-                if  self.hall_queue[i].call_button.floor == order.call_button.floor &&
-                    self.hall_queue[i].call_button.call  == order.call_button.call
-                {
-                    self.hall_queue.remove(i);
-                    break;
-                }
-            }
-        }
+    pub fn remove_elevator(&mut self, slave_number: u8) {
+        self.hall_requests.remove(slave_number as usize);
+        self.elevator_states.remove(slave_number as usize);
     }
 
-    // Simple algorithm for getting the next order. Works for testing purposes, but need to implement more sophisticated version. 
-    pub fn get_next_order(&mut self, slave_num: u8) -> Option<Order> {
-        //Confirmed working
-        if self.cab_queues[slave_num as usize].len() > 0 {
-            let mut order = *self.cab_queues[slave_num as usize].front().unwrap();
-            order.in_progress = true;
-            return Some(order);
-        }
-        // Need work
-        else {
-            for i in 0..self.hall_queue.len() {
-                if self.hall_queue[i].in_progress == false {
-                    self.hall_queue[i].in_progress = true;
-                    return Some(self.hall_queue[i]);
-                }
-            }
+    pub fn update_elevator_state(&mut self, new_state: ElevatorState, slave_number: u8) {
+        self.elevator_states[slave_number as usize] = new_state;
+    }
 
-            //If all orders are in progress
-            return None;
+
+    pub fn get_next_order(&mut self, slave_number: u8) -> tcp::CallButton{
+        // run the optimization algorithm
+        // return the next order for the slave
+
+
+    }
+
+    fn to_custom_json(&self) -> String {
+        use serde_json::{json, Value, Map};
+
+        // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
+        let hall_requests: Vec<Value> = self.hall_requests
+            .iter()
+            .map(|&(up, down)| json!([up, down]))
+            .collect();
+
+        let mut states = Map::new();
+        for (i, state) in self.elevator_states.iter().enumerate() {
+            
+        }
+
+    }
+
+    pub fn update_hall_requests(&mut self, slave_number: u8, call: tcp::CallButton) {
+        match call.call {
+            HALL_UP => {
+                self.hall_requests[slave_number as usize].0 = true;
+            }
+            HALL_DOWN => {
+                self.hall_requests[slave_number as usize].1 = true;
+            }
+            _ => {
+                println!("[MASTER]\tGot cab call from slave. Exeting");
+                return;
+            }
         }
     }
 }
@@ -134,7 +110,6 @@ pub struct Master {
     pub config                      : Config,                                                                     
     pub order_queues                : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
     slave_channels                  : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,   // Vector of slave channels.
-    slave_elevator_state            : Arc<Mutex<Vec<ElevatorState>>>,
     number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
     backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
