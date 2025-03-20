@@ -1,5 +1,6 @@
 use driver_rust::elevio::elev as e;
 use crossbeam_channel as cbc;
+use driver_rust::elevio::poll::CallButton;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
@@ -157,18 +158,12 @@ impl Slave {
                 Ok(stream) => {
                     println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
                     self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
-                    //send cab cue to master Hær kan vi ta med hall orders og!
-                    let mut call_buttons_to_send = Vec::new();
-                    for (floor, order) in self.state.cab_requests.iter().enumerate() {
-                        if *order { //eller skal vi ta med alt?
-                            call_buttons_to_send.push(tcp::CallButton { floor: floor as u8, call: e::CAB });
-                        }
-                    }
-                    
-                    for call_button in call_buttons_to_send {
-                        print!("Sending cab call to master: {:#?}", call_button);
-                        self.send_new_order(call_button);
-                    }
+                    //send status til master
+                    self.send_state_update();
+                    //Stop the elevator, and let the master decide what to do 
+                    //ditta gjær at de blir et lite hakk, men e de innafor siden de e beire en at den kjøre utforbi
+                    self.elevator.motor_direction(e::DIRN_STOP);
+                    self.set_behaviour(ElevatorBehaviour::Idle);
                     return;
                 },
                 Err(_e) => {}   // Continue trying with the next IP address  
@@ -227,19 +222,24 @@ impl Slave {
     }
 
     fn send_order_complete(&mut self) {
-        let message = tcp::Message::OrderComplete(self.nxt_order);
 
         // remove order from local_orders list
-        self.clear_at_current_floor(); 
+        // self.clear_at_current_floor(); 
+        self.state.cab_requests[self.state.floor as usize]   = false;
+        self.send_state_update();
         
-        if self.master_channels.is_none() {
-            println!("[SLAVE]\t\tNo master found. Cannot send order.");
-            return;
-        }
+         if self.nxt_order.call!=2{
+            let message = tcp::Message::OrderComplete(self.nxt_order);
+            
+            if self.master_channels.is_none() {
+                println!("[SLAVE]\t\tNo master found. Cannot send order.");
+                return;
+            }
 
-        match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => {},
-            Err(e) => println!("[SLAVE]\t\tFailed to send order complete: {}", e),
+            match self.master_channels.as_mut().unwrap().0.send(message) {
+                Ok(_) => {println!("[SLAVE]\t\tSent order complite");},
+                Err(e) => println!("[SLAVE]\t\tFailed to send order complete: {}", e),
+            }
         }
     }
 
@@ -279,10 +279,7 @@ impl Slave {
             return;
         }
 
-        if self.state.floor == self.nxt_order.floor {
-            self.state.direction = Direction::Stop;
-            self.set_behaviour(ElevatorBehaviour::Idle);
-        } else if self.state.floor > self.nxt_order.floor {
+        if self.state.floor > self.nxt_order.floor {
             self.state.direction = Direction::Down;
             self.set_behaviour(ElevatorBehaviour::Moving);
         } else {
@@ -315,6 +312,7 @@ impl Slave {
     fn set_behaviour(&mut self, new_behaviour: ElevatorBehaviour) {
         if new_behaviour != self.state.behaviour {
             if new_behaviour != ElevatorBehaviour::OutOfOrder {
+                self.state.behaviour = new_behaviour;
                 self.send_state_update();
             }
             self.state.behaviour = new_behaviour;
@@ -397,6 +395,7 @@ impl Slave {
                         else {
                             println!("[SLAVE]\t\tTimer expired. Door closing.");
                             self.elevator.door_light(false);
+                            self.set_behaviour(ElevatorBehaviour::Idle);
                             self.start_moving_local();
                         }
                     }
@@ -416,21 +415,13 @@ impl Slave {
                         let floor_sensor = msg.unwrap();
                         self.state.floor = floor_sensor;
                         self.elevator.floor_indicator(self.state.floor);
-
-                        match self.state.behaviour {
-                            ElevatorBehaviour::Moving => {
-                                // If the elevator is moving, check if it has reached the next order. If not: keep moving.
-                                println!("[SLAVE]\t\tMoving. Floor: {:?}, next order {}", self.state.floor, self.nxt_order.floor);
-                                if self.state.floor == self.nxt_order.floor
-                                {
-                                    self.state.direction = Direction::Stop;
-                                    self.elevator.motor_direction(e::DIRN_STOP);
-                                    self.set_behaviour(ElevatorBehaviour::DoorOpen);
-                                    self.elevator.door_light(true);
-                                    self.start_door_timer(Duration::from_secs(3));                
-                                }
-                            },
-                            _ => {},    // Hvis heisen ikke er i bevegelse, gjør ingenting
+                        if self.state.floor == self.nxt_order.floor{
+                            self.state.direction = Direction::Stop;
+                            self.elevator.motor_direction(e::DIRN_STOP);
+                            self.set_behaviour(ElevatorBehaviour::DoorOpen);
+                            self.elevator.door_light(true);
+                            self.start_door_timer(Duration::from_secs(3)); 
+                            self.send_order_complete();
                         }
                     }
 
@@ -469,7 +460,7 @@ impl Slave {
                             println!("[SLAVE]\t\tTimer expired. Door closing.");
                             self.elevator.door_light(false);
                             self.set_behaviour(ElevatorBehaviour::Idle);
-                            self.send_order_complete();
+                          //self.send_order_complete();
                         }
                     }
 
@@ -481,11 +472,13 @@ impl Slave {
                                 // TEST if this is right!
                                 if self.state.behaviour == ElevatorBehaviour::Idle {
                                     self.nxt_order = callbutton.clone();
-                                    println!("[SLAVE]\t\tReceived new order: {:#?}", callbutton);
+                                    //println!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
+                                    println!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
                                     if self.state.floor == self.nxt_order.floor {
                                         self.set_behaviour(ElevatorBehaviour::DoorOpen);
                                         self.elevator.door_light(true);
                                         self.start_door_timer(Duration::from_secs(3));
+                                        self.send_order_complete();
                                     }
                                     else {
                                         self.start_moving_normal();
@@ -596,7 +589,7 @@ impl Slave {
 
     fn start_moving_local(&mut self) {
         let (diraction, behaviour) = self.choose_direction();
-        self.nxt_order = tcp::CallButton { floor: 1, call: 0};
+        self.nxt_order = tcp::CallButton { floor: 1, call: 2};
         self.state.behaviour = behaviour;
         
         if behaviour == ElevatorBehaviour::DoorOpen {

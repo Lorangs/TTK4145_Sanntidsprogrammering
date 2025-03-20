@@ -88,36 +88,47 @@ impl MasterQueues {
         } 
         else { return None; }
 
-        println!( "{:#?}", orders);
+        println!( "[Master] ORDERS: {:#?}", orders);
         
 
         let elevator= self.states[elevator_number as usize].clone();
 
-
-        match elevator.direction {
-            Direction::Down => {
-                for i in elevator.floor..0 {
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                        return Some(CallButton { floor: i as u8, call: CAB });
+        if elevator.behaviour == ElevatorBehaviour::Idle {
+            match elevator.direction {
+                Direction::Down => {
+                    for i in (0..elevator.floor).rev() {
+                        println!("ned {}\n",i);
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
                     }
                 }
-            }
-            Direction::Up => {
-                for i in elevator.floor..slave::NUMBER_OF_FLOORS {
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                        return Some(CallButton { floor: i as u8, call: CAB });
+                Direction::Up => {
+                    for i in elevator.floor..slave::NUMBER_OF_FLOORS {
+                        println!("opp {}\n",i);
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
                     }
                 }
-            }
-            Direction::Stop => {
-                for i in elevator.floor..slave::NUMBER_OF_FLOORS {
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                        return Some(CallButton{ floor: i as u8, call: CAB });
-                    }
-                }
-                for i in (elevator.floor .. 0).rev() {
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] || orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                        return Some(CallButton { floor: i as u8, call: CAB });
+                Direction::Stop => {
+                    for i in 0..slave::NUMBER_OF_FLOORS{
+                        println!("stop opp{}\n",i);
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
                     }
                 }
             }
@@ -125,7 +136,7 @@ impl MasterQueues {
         return None; 
     }
 
-
+    
     fn to_custom_json(&self) -> String {
         use serde_json::{json, Value, Map};
         // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
@@ -293,8 +304,7 @@ impl Master {
                         match message {
                             Message::NewOrder(call_button) => {// ditta vil altid vær en hall order no, sant?, so fjerna cab delen
                                 let mut requests_locked = self.requests.lock().unwrap();
-                                requests_locked
-                                    .update_hall_requests(call_button, true);
+                                requests_locked.update_hall_requests(call_button, true);
                                 println!("[MASTER]\tAdded order to hall queue: {}",call_button);
 
                                 if self.master_to_backup_tx.is_some() { //opdater backup, so alle slava
@@ -352,16 +362,9 @@ impl Master {
                                     {
                                         Ok(_) => {
                                             for i in 0..locked_num_slaves {
-                                                let light_matrix = self
-                                                    .make_light_matrix(i, requests_locked.clone());
-                                                locked_channels[i as usize]
-                                                    .0
-                                                    .send(light_matrix)
-                                                    .unwrap();
-                                                println!(
-                                                    "[MASTER]\tSent light matrix to slave {}",
-                                                    i
-                                                );
+                                                let light_matrix = self.make_light_matrix(i, requests_locked.clone());
+                                                locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                                println!("[MASTER]\tSent light matrix to slave {}",i);
                                             }
                                         }
                                         Err(_) => {
@@ -393,12 +396,14 @@ impl Master {
                                         println!("[MASTER]\tNo orders available for slave {}", slave_number);
                                     }
                                 }
-                            }
+                            }// idle og state update gjer basacly akkuratt de samme bruke en fungsjon kansje?
                             
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
                                 let mut request_locked = self.requests.lock().unwrap();
                                 request_locked.states[slave_number as usize] = new_state;
+                                let light_matrix = self.make_light_matrix(slave_number,request_locked.clone());
+                                locked_channels[slave_number as usize].0 .send(light_matrix).unwrap();
                                 let nxt_order = request_locked.get_next_order(slave_number);
                                 match nxt_order {
                                     Some(_) => {

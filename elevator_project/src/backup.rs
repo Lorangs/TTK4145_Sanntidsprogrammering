@@ -52,7 +52,7 @@ impl Backup {
 
     // Updates backup orders and returns them if master disconnects
     // Ned to handle the case where the backup recieves a message but dont update the orders. May need to be handled in both backup and master.
-    pub fn backup_loop(&mut self) -> MasterQueues {
+    pub fn backup_loop(&mut self) -> Result<MasterQueues, cbc::RecvError> {
         loop {
             match self.master_to_backup_rx.recv() {
                 Ok(message) => {
@@ -63,9 +63,7 @@ impl Backup {
                         }
                         Message::Error(ErrorState::Network) => {
                             println!("[BACKUP]\tMaster disconnected");
-                            //make all in progress=flase
-                            //ikkje veldig elegant
-                            return self.orders.clone();
+                            return Ok(self.orders.clone());
                         }
                         _ => {} // Do nothing for other types of incoming messages.
                     }
@@ -76,7 +74,7 @@ impl Backup {
                     // try sending error state to master so that master can initilize an other backup.
                     // if not possible, return orders and inititize self as new master.
 
-                    return self.orders.clone();
+                    return Ok(self.orders.clone());
                 }
             }
         }

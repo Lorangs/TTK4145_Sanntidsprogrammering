@@ -8,9 +8,18 @@ fn main() {
 
     loop {
         let mut backup = Backup::init(&config);
-        let masterqueues = backup.backup_loop();
-        let mut master = Master::init(&config, masterqueues).unwrap();
-        print!("[MASTER]\tMaster initialized\n");
-        master.master_loop();
+        let masterqueues_result = backup.backup_loop();
+        
+        match masterqueues_result {
+            Ok(masterqueues) => {
+                let mut master = Master::init(&config, masterqueues).unwrap();
+                println!("[MASTER]\tMaster initialized");
+                master.master_loop();
+            }
+            Err(e) => {
+                println!("[BACKUP]\tBackup loop failed: {:?}", e);
+                println!("[BACKUP]\tRestarting backup");
+            }
+        }
     }
 }

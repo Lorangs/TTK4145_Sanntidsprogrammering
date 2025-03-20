@@ -9,12 +9,15 @@ fn main() {
 
     let config = Config::read_config(Path::new("config.json")).unwrap();
 
-    let slave_ip = config.elevator_ip_list[args[1].parse::<usize>().unwrap()].to_string() + ":" + &config.slave_port.to_string();
+    loop{
+        let slave_ip = config.elevator_ip_list[args[1].parse::<usize>().unwrap()].to_string() + ":" + &config.slave_port.to_string();
 
-    let mut slave = Slave::init(slave_ip, &config);
-    print!("Slave initialized\n");
+        let mut slave = Slave::init(slave_ip, &config);
+        print!("Slave initialized\n");
 
-    slave.slave_loop();
+        slave.slave_loop();
+        print!("slave faled, restarting slave\n");
+    }
 }
 
 //TODO try to restart slave if it crashes
