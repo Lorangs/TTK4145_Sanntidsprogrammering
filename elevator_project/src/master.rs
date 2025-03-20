@@ -93,46 +93,46 @@ impl MasterQueues {
 
         let elevator= self.states[elevator_number as usize].clone();
 
-        if elevator.behaviour == ElevatorBehaviour::Idle {
-            match elevator.direction {
-                Direction::Down => {
-                    for i in (0..elevator.floor).rev() {
-                        println!("ned {}\n",i);
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
+        
+        match elevator.direction {
+            Direction::Down => {
+                for i in (0..elevator.floor).rev() {
+                    println!("ned {}\n",i);
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                        return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                    }
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        return Some(CallButton { floor: i as u8, call: CAB });
                     }
                 }
-                Direction::Up => {
-                    for i in elevator.floor..slave::NUMBER_OF_FLOORS {
-                        println!("opp {}\n",i);
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
+            }
+            Direction::Up => {
+                for i in elevator.floor..slave::NUMBER_OF_FLOORS {
+                    println!("opp {}\n",i);
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                        return Some(CallButton { floor: i as u8, call: HALL_UP });
+                    }
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        return Some(CallButton { floor: i as u8, call: CAB });
                     }
                 }
-                Direction::Stop => {
-                    for i in 0..slave::NUMBER_OF_FLOORS{
-                        println!("stop opp{}\n",i);
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
+            }
+            Direction::Stop => {
+                for i in 0..slave::NUMBER_OF_FLOORS{
+                    println!("stop opp{}\n",i);
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                        return Some(CallButton { floor: i as u8, call: HALL_UP });
+                    }
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        return Some(CallButton { floor: i as u8, call: CAB });
+                    }
+                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                        return Some(CallButton { floor: i as u8, call: HALL_DOWN });
                     }
                 }
             }
         }
+        
         return None; 
     }
 
@@ -214,7 +214,7 @@ impl Master {
 
         // Thread for listening for new slave connections
         spawn(move || {
-            let listener =
+            let listener = // e de beire å bruke elevator ip list hær sånn at vi kan huske ordrane til heisa?
                 TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
             for stream in listener.incoming() {
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
@@ -342,8 +342,28 @@ impl Master {
                                             self.master_to_backup_tx = None;
                                         }
                                     }
-
-                                    // send order list to backup
+                                   // send order list to backup
+                                }
+                                else {
+                                    println!("[MASTER]\tNo backup connected, asuming I am the onely pc in operation");
+                                    for i in 0..locked_num_slaves {
+                                        let light_matrix = self.make_light_matrix(
+                                            i,
+                                            requests_locked.clone(),
+                                        );
+                                        locked_channels[i as usize]
+                                            .0
+                                            .send(light_matrix)
+                                            .unwrap();
+                                        println!(
+                                            "[MASTER]\tSent light matrix to slave {}",
+                                            i
+                                        );
+                                    }
+                                    println!(
+                                        "[MASTER]\tAdded order to hall queue: {}:{}",
+                                        call_button.floor, call_button.call
+                                    );
                                 }
                             }
 
@@ -372,6 +392,14 @@ impl Master {
                                             self.master_to_backup_tx = None;
                                             todo!();
                                         }
+                                    }
+                                }
+                                else{
+                                    println!("[MASTER]\tNo backup connected, asuming I am the onely pc in operation");
+                                    for i in 0..locked_num_slaves {
+                                        let light_matrix = self.make_light_matrix(i, requests_locked.clone());
+                                        locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                        println!("[MASTER]\tSent light matrix to slave {}",i);
                                     }
                                 }
                             }

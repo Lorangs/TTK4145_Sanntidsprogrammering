@@ -159,7 +159,7 @@ impl Slave {
                     println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
                     self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
                     //send status til master
-                    self.send_state_update();
+                    //self.send_state_update(); trur ikkje vi trenge ditta siden det blir gjort inne i set behavior og
                     //Stop the elevator, and let the master decide what to do 
                     //ditta gjær at de blir et lite hakk, men e de innafor siden de e beire en at den kjøre utforbi
                     self.elevator.motor_direction(e::DIRN_STOP);
@@ -414,6 +414,7 @@ impl Slave {
                     recv(self.channels.floor_sensor_rx) -> msg => {
                         let floor_sensor = msg.unwrap();
                         self.state.floor = floor_sensor;
+                        self.send_state_update(); // jobba med å få til å ta ordre på veien so la til dinna, men går ikkje endå
                         self.elevator.floor_indicator(self.state.floor);
                         if self.state.floor == self.nxt_order.floor{
                             self.state.direction = Direction::Stop;
@@ -470,7 +471,7 @@ impl Slave {
                         match message {
                             tcp::Message::NewOrder(callbutton) => {
                                 // TEST if this is right!
-                                if self.state.behaviour == ElevatorBehaviour::Idle {
+                                if self.state.behaviour == ElevatorBehaviour::Idle { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
                                     self.nxt_order = callbutton.clone();
                                     //println!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
                                     println!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
@@ -485,7 +486,7 @@ impl Slave {
                                     }
                                 }
                                 else {
-                                    println!("[SLAVE]\t\tReceived new order, but elevator is not idle");
+                                   println!("[SLAVE]\t\tReceived new order, but elevator is not idle");
                                 }
                             },
                             tcp::Message::LightMatrix(matrix) => {
@@ -512,7 +513,7 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {},
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {}, //får å få den til å ikkje spamme Idle til master
                 }// cbc::select
             } // else
         } // loop
