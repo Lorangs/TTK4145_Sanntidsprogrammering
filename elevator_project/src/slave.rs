@@ -501,7 +501,11 @@ impl Slave {
                             },
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
                             tcp::Message::StateUpdate(state) => {     
-                                self.state.cab_requests = state.cab_requests;
+                                for i in 0..NUMBER_OF_FLOORS {
+                                    if state.cab_requests[i] {
+                                        self.state.cab_requests[i] = state.cab_requests[i]; //sånn at den behelde dei ordrane den hadde i localt modus
+                                    }
+                                }
                                 self.send_state_update();
                                 //println!("[SLAVE]\t\tReceived state update");
                             },
