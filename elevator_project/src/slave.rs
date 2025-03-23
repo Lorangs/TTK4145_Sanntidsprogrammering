@@ -30,7 +30,7 @@ impl ElevatorBehaviour{
         match self {
             ElevatorBehaviour::Idle => "idle",
             ElevatorBehaviour::Moving => "moving",
-            ElevatorBehaviour::DoorOpen => "door_open",
+            ElevatorBehaviour::DoorOpen => "doorOpen",
             ElevatorBehaviour::OutOfOrder => "out_of_order",
         }
     }
@@ -62,7 +62,7 @@ pub struct ElevatorState {
 impl ElevatorState{
     pub fn init() -> ElevatorState {
         ElevatorState {
-            behaviour       : ElevatorBehaviour::Idle,
+            behaviour       : ElevatorBehaviour::OutOfOrder,
             floor           : 0,
             direction       : Direction::Stop,
             cab_requests    : [false; NUMBER_OF_FLOORS]
@@ -111,12 +111,7 @@ impl Slave {
             config: conf,
             elevator: elev,
             nxt_order           : tcp::CallButton { floor: 0, call: 0 },
-            state               : ElevatorState {
-                    behaviour   : ElevatorBehaviour::Idle,
-                    floor       : 0,
-                    direction   : Direction::Stop,
-                    cab_requests: [false; NUMBER_OF_FLOORS as usize],
-                },
+            state               : ElevatorState::init(),
             obstruction         : false,
             channels            : chs,
             master_channels     : None,
@@ -213,7 +208,10 @@ impl Slave {
         match callbutton.call {
             0_u8..=1_u8 => {
                 match   self.master_channels
-                            .as_mut().unwrap().0.send(message) {
+                            .as_mut()
+                            .unwrap()
+                            .0
+                            .send(message) {
                     Ok(_) => {},
                     Err(e) => {
                         println!("[SLAVE]\t\tFailed to send order: {}", e);

@@ -4,6 +4,7 @@ use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
 
+use std::f32::consts::E;
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, TcpListener, Ipv4Addr};
@@ -16,29 +17,25 @@ use std::collections::HashMap;
 
 use crate::config::{Config, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
 use crate::tcp::{self, CallButton, Message};
-use crate::slave::{self, Direction, ElevatorState};
+use crate::slave::{Direction, ElevatorState, ElevatorBehaviour};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
-    pub hallRequests       : Vec<[bool; 2]>,   
-    pub states             : [Option<ElevatorState>; NUMBER_OF_ELEVATORS]
+    pub hallRequests       : [[bool; 2]; NUMBER_OF_FLOORS],   
+    pub states             : [ElevatorState; NUMBER_OF_ELEVATORS]
 }
 //endre navn?
 impl MasterQueues {
     pub fn init() -> MasterQueues {
-        let hallRequests    : Vec<[bool; 2]> = vec![[false; 2]; NUMBER_OF_FLOORS ];
-        let states          : [ Option<ElevatorState>; NUMBER_OF_ELEVATORS ] = [ None; NUMBER_OF_ELEVATORS ];
+        let hallRequests    : [[bool; 2]; NUMBER_OF_FLOORS] = [[false; 2]; NUMBER_OF_FLOORS ];
+        let states          : [ ElevatorState; NUMBER_OF_ELEVATORS ] = [ ElevatorState::init(); NUMBER_OF_ELEVATORS ];
 
         MasterQueues {
             hallRequests,
             states,
         }
     }  
-
-    pub fn remove_elevator(&mut self, slave_number: u8) {
-        self.states[slave_number as usize] = None;
-    }
 
     pub fn update_hall_requests(&mut self, call: tcp::CallButton, remove_or_add: bool) { //beire navn, men true for add, false for remove
         match call.call {
@@ -76,8 +73,7 @@ impl MasterQueues {
         else { return None; }
         
         let elevator= self.states[slave_number].clone();
-        if elevator.is_some() {
-            let elevator = elevator.unwrap();
+        if elevator.behaviour == ElevatorBehaviour::OutOfOrder {
             match elevator.direction {
                 Direction::Down => {
                     for i in (0..elevator.floor).rev() {
@@ -128,17 +124,18 @@ impl MasterQueues {
 
         let mut states = Map::new();
         for (key, state) in self.states.iter().enumerate() {
-            if state.is_none() {
+            if state.behaviour == ElevatorBehaviour::OutOfOrder {
                 continue;
             }
             let state_object = json!({
-                "floor": state.unwrap().floor,
-                "behaviour": state.unwrap().behaviour.to_ascii_lowercase(),
-                "direction": state.unwrap().direction.to_ascii_lowercase(),
-                "cabRequests": state.unwrap().cab_requests,
+                "floor": state.floor,
+                "behaviour": state.behaviour.to_ascii_lowercase(),
+                "direction": state.direction.to_ascii_lowercase(),
+                "cabRequests": state.cab_requests,
             });
             states.insert(key.to_string(), state_object);
         }
+        println!("{:?}", states);
 
         let result = json!({
             "hallRequests": hall_requests,
@@ -227,13 +224,12 @@ impl Master {
 
                         // send previous cab orders to slave
                         println!("[MASTER]\tSending previous orders to slave");
-                        if locked_requests.states[slave_number].is_some() {
-                            
-                            locked_channel [slave_number]
+                        if locked_requests.states[slave_number].behaviour != ElevatorBehaviour::OutOfOrder {
+                            locked_channel[slave_number]
                                 .as_ref()
                                 .unwrap()
                                 .0
-                                .send(Message::StateUpdate(locked_requests.states[slave_number].unwrap()))
+                                .send(Message::StateUpdate(locked_requests.states[slave_number]))
                                 .unwrap();
                             drop(locked_requests);
                             drop(locked_channel);
@@ -255,26 +251,24 @@ impl Master {
 
         for (floor, hall_call) in requests.hallRequests.iter().enumerate() {
             match hall_call {
-                [false, false] => {
-                    new_matrix[floor][0] = false;
-                    new_matrix[floor][1] = false;
-                }
+                [false, false] => {},
                 [true, false] => {
                     new_matrix[floor][0] = true;
-                }
+                },
                 [false, true] => {
                     new_matrix[floor][1] = true;
-                }
+                },
                 [true, true] => {
                     new_matrix[floor][0] = true;
                     new_matrix[floor][1] = true;
                 }
             }
         }
-
-        for (floor, cab_call) in requests.states[slave_number].unwrap().cab_requests.iter().enumerate() {
-            if *cab_call{
-                new_matrix[floor][2] = true;
+        if requests.states[slave_number].behaviour != ElevatorBehaviour::OutOfOrder {
+            for (floor, cab_call)  in requests.states[slave_number].cab_requests.iter().enumerate() {
+                if *cab_call {
+                    new_matrix[floor][2] = true;
+                }
             }
         }
         Message::LightMatrix(new_matrix)
@@ -448,7 +442,8 @@ impl Master {
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
                                 let mut request_locked = self.requests.lock().unwrap();
-                                request_locked.states[slave_number] = Some(new_state);
+                                request_locked.states[slave_number] = new_state;
+
                                 let light_matrix = self.make_light_matrix(slave_number,request_locked.clone());
                                 locked_channels[slave_number].clone().unwrap()
                                     .0
@@ -473,6 +468,7 @@ impl Master {
                             // Removes an disconected slave
                             Message::Error(_e) => {
                                 locked_channels[slave_number] = None;
+                                self.requests.lock().unwrap().states[slave_number].behaviour = ElevatorBehaviour::OutOfOrder;
                                 //self.requests.lock().unwrap().remove_elevator(slave_number); //kan hende vi ikkje kan fjerne i tilfelle den har mista strøm og kjem tilbake                                
                             }
                             _ => {

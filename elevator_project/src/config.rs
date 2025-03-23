@@ -6,8 +6,10 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::result::Result;
 
-pub const NUMBER_OF_FLOORS  : usize = 4;
-pub const NUMBER_OF_ELEVATORS: usize = 2;
+// constants variables for the elevator system
+// Struggled to put these in the config file due to compile time errors
+pub const NUMBER_OF_FLOORS      : usize = 4;
+pub const NUMBER_OF_ELEVATORS   : usize = 2;
 
 // Custom serde module for Vec<Ipv4Addr> serialization/deserialization
 mod ipv4_address_vec {
@@ -72,8 +74,6 @@ pub struct Config {
     pub input_poll_rate_ms: u64,
     pub tcp_timeout_ms: u64,
 }
-
-
 
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {

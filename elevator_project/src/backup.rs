@@ -19,15 +19,13 @@ impl Backup {
         println!("[BACKUP]\tInitializing backup");
 
         loop {
-            let listener: TcpListener =
-                TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string())
+            let listener: TcpListener = TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string())
                     .expect("Failed to bind");
             for stream in listener.incoming() {
                 // Connects to one master only
                 match stream {
                     Ok(stream) => {
-                        let (master_to_backup_tx, master_to_backup_rx) =
-                            cbc::unbounded::<Message>();
+                        let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded::<Message>();
 
                         let backup = Backup {
                             orders: MasterQueues::init(),
