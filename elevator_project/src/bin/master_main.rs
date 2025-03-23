@@ -8,6 +8,7 @@ fn main() {
 
     //starting a master first, and if it fails be ready as a backup
     let mut master = Master::init(&config, OrderRequests::init()).unwrap();
+    println!("[MASTER]\tMaster initialized");
     master.master_loop();
 
     loop {

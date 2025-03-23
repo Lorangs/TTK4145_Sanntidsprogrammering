@@ -88,7 +88,7 @@ fn handle_master_connection(
     tcp_timeout_ms: u64, // Not used. Need to bee a Duration to be passed to stream.set_read_timeout()
 ) //-> Result<(), cbc::RecvError>
 {
-    let mut buffer: Vec<u8> = Vec::new();
+    let mut buffer: [u8; 1024] = [0; 1024];
     stream
         .set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms)))
         .expect("Failed to set read timeout");
@@ -97,8 +97,7 @@ fn handle_master_connection(
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
-                    println!("[BACKUP]\tReceived message from master: {:?}", buffer);
-                    let msg: Message = bincode::deserialize(&buffer).expect("Failed to deserialize message");
+                    let msg: Message = bincode::deserialize::<Message>(&buffer).expect("Failed to deserialize message");
                     println!("[BACKUP]\tReceived message from master: {:#?}", msg);
                     master_to_backup_tx.send(msg).unwrap();
                 }

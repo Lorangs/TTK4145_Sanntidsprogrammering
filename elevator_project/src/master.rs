@@ -171,7 +171,6 @@ impl Master {
         order_requests: OrderRequests
     ) -> Result<Master, String> 
     {
-
         let mut master = Master {
             config                  : config.clone(),
             requests                : Arc::new(Mutex::new(order_requests)),
@@ -190,9 +189,9 @@ impl Master {
         // Thread for listening for new slave connections
         spawn(move || {
             let listener = // e de beire å bruke elevator ip list hær sånn at vi kan huske ordrane til heisa?
-                TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
+            TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
             for stream in listener.incoming() {
-
+                
                 let slave_number: usize;
                 match stream.as_ref().unwrap().peer_addr().unwrap().ip(){
                     std::net::IpAddr::V4(ip) => { 
@@ -207,11 +206,11 @@ impl Master {
                 
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
                 locked_channel[slave_number] = Some((master_to_slave_tx, slave_to_master_rx));
-
+                
                 let locked_requests = requests_clone.lock().unwrap();
-
+                
                 println!("[MASTER]\tGot new stream: {}", slave_number);
-
+                
                 match stream {
                     Ok(stream) => {
                         println!(
@@ -219,25 +218,25 @@ impl Master {
                             stream.peer_addr().unwrap()
                         );
                         spawn(|| handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx));
-
+                        
                         // send previous cab orders to slave
                         println!("[MASTER]\tSending previous orders to slave");
                         locked_channel[slave_number]
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .send(Message::StateUpdate(locked_requests.states[slave_number]))
-                            .unwrap();
-                        drop(locked_requests);
-                        drop(locked_channel);
-                    },
-                    Err(_) => {
-                        eprintln!("[MASTER]\tFailed to establish connection to slave");
-                    }
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .send(Message::StateUpdate(locked_requests.states[slave_number]))
+                        .unwrap();
+                    drop(locked_requests);
+                    drop(locked_channel);
+                },
+                Err(_) => {
+                    eprintln!("[MASTER]\tFailed to establish connection to slave");
                 }
             }
-        });
-        Ok(master)
+        }
+    });
+    Ok(master)
     }
 
     // Returns a 3 x num_floors matrix for updating panel lights. 
@@ -471,7 +470,7 @@ fn handle_slave_connection(
     slave_to_master_tx: cbc::Sender<tcp::Message>,
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
 ) {
-    let mut buffer: Vec<u8> = vec![0; 1024];
+    let mut buffer: [u8; 1024] = [0; 1024];
     stream
         .set_nonblocking(true)
         .expect("Failed to set non-blocking mode on stream");    
@@ -480,7 +479,7 @@ fn handle_slave_connection(
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
-                    let msg: Message = bincode::deserialize(&buffer[..size])
+                    let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
                         .expect("[MASTER]\tFailed to deserialize message from slave");
                     //println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
                     slave_to_master_tx.send(msg).unwrap();
@@ -499,7 +498,7 @@ fn handle_slave_connection(
 
         match master_to_slave_rx.try_recv() {
             Ok(message) => {
-                let encoded =
+                let encoded: Vec<u8> =
                     bincode::serialize(&message).expect("Failed to serialize message to slave");
                 match stream.write(&encoded) {
                     Ok(_) => {},
