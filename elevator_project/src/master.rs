@@ -124,22 +124,22 @@ impl MasterQueues {
 
         let mut states = Map::new();
         for (key, state) in self.states.iter().enumerate() {
-            if state.behaviour == ElevatorBehaviour::OutOfOrder {
-                continue;
+            if state.behaviour != ElevatorBehaviour::OutOfOrder {
+                let state_object = json!({
+                    "floor": state.floor,
+                    "behaviour": state.behaviour.to_ascii_lowercase(),
+                    "direction": state.direction.to_ascii_lowercase(),
+                    "cabRequests": state.cab_requests,
+                });
+                states.insert(key.to_string(), state_object);
             }
-            let state_object = json!({
-                "floor": state.floor,
-                "behaviour": state.behaviour.to_ascii_lowercase(),
-                "direction": state.direction.to_ascii_lowercase(),
-                "cabRequests": state.cab_requests,
-            });
-            states.insert(key.to_string(), state_object);
         }
 
         let result = json!({
             "hallRequests": hall_requests,
             "states": states,
         }); 
+        println!("{}", serde_json::to_string(&result).unwrap());
         serde_json::to_string(&result).unwrap()
     }
 }
@@ -426,7 +426,7 @@ impl Master {
                                     }
                                     None => {
                                         //todo!();
-                                        println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
+                                        println!("[MASTER]\tNo orders available for slave:\t\t{}", slave_number);
                                     }
                                 }
                             }// idle og state update gjer basacly akkuratt de samme bruke en fungsjon kansje?

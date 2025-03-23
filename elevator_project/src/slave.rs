@@ -149,6 +149,10 @@ impl Slave {
         if slave.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
         }
+        else{
+            println!("[SLAVE]\t\tConnected to master. Starting in normal operation mode.");
+            slave.send_state_update();
+        }
         return slave;
     }
 
@@ -522,7 +526,7 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms*500)) => {
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
                             self.send_idle();
                         }
