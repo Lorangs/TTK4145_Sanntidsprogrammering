@@ -27,19 +27,34 @@ mod ipv4_address_vec {
         str_addresses.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Ipv4Addr>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[Ipv4Addr; NUMBER_OF_ELEVATORS], D::Error>
     where
         D: Deserializer<'de>,
     {
         let str_addresses: Vec<String> = Vec::deserialize(deserializer)?;
         
         // Convert strings to Ipv4Addr
-        let result: Result<Vec<Ipv4Addr>, _> = str_addresses
+        let vec: Result<Vec<Ipv4Addr>, _> = str_addresses
             .iter()
             .map(|s| Ipv4Addr::from_str(s).map_err(serde::de::Error::custom))
             .collect();
-            
-        result
+
+        // Ensure the vector has the correct length
+        if vec.len() != NUMBER_OF_ELEVATORS {
+            return Err(serde::de::Error::custom(format!(
+                "Expected {} IP addresses, but got {}",
+                NUMBER_OF_ELEVATORS,
+                vec.len()
+            )));
+        }
+
+        // Convert Vec to array
+        let mut array = [Ipv4Addr::new(0, 0, 0, 0); NUMBER_OF_ELEVATORS];
+        for (i, addr) in vec.into_iter().enumerate() {
+            array[i] = addr;
+        }
+
+        Ok(array)
     }
 }
 
