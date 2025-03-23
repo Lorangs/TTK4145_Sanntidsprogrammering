@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display as FmtDisplay, Result as FmtResult, Formatter as FmtFormatter};
+use crate::config::NUMBER_OF_FLOORS;
 use crate::slave::ElevatorState;
 use crate::master::MasterQueues;
 
@@ -19,7 +20,7 @@ impl FmtDisplay for CallButton {
 pub enum Message {
     NewOrder(CallButton),
     OrderComplete(CallButton),
-    LightMatrix(Vec<[bool; 3]>), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
+    LightMatrix([[bool; 3]; NUMBER_OF_FLOORS]), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
     Error(ErrorState),
     Backup(MasterQueues),
     StateUpdate(ElevatorState),

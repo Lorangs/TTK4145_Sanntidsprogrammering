@@ -93,7 +93,7 @@ pub struct Slave {
     channels        : inputs::SlaveChannels,
     master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
     door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
-    light_matrix    : Vec<[bool; 3]>,                                                       // Hall_UP, Hall_DOWN, CAB_CALL for each floor
+    light_matrix    : [[bool; 3]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN, CAB_CALL for each floor
 }
 
 impl Slave {
@@ -121,7 +121,7 @@ impl Slave {
             channels            : chs,
             master_channels     : None,
             door_timer          : cbc::unbounded::<bool>(),
-            light_matrix        : vec![[false; 3]; NUMBER_OF_FLOORS],
+            light_matrix        : [[false; 3]; NUMBER_OF_FLOORS],
         };
         
         // Turns all lights off

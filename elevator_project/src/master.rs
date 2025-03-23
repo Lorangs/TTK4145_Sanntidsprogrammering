@@ -87,7 +87,6 @@ impl MasterQueues {
             match elevator.direction {
                 Direction::Down => {
                     for i in (0..elevator.floor).rev() {
-                        println!("ned {}\n",i);
                         if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
                             return Some(CallButton { floor: i as u8, call: HALL_DOWN });
                         }
@@ -98,7 +97,6 @@ impl MasterQueues {
                 }
                 Direction::Up => {
                     for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
-                        println!("opp {}\n",i);
                         if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
                             return Some(CallButton { floor: i as u8, call: HALL_UP });
                         }
@@ -109,7 +107,6 @@ impl MasterQueues {
                 }
                 Direction::Stop => {
                     for i in 0..NUMBER_OF_FLOORS as u8{
-                        println!("stop opp{}\n",i);
                         if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
                             return Some(CallButton { floor: i as u8, call: HALL_UP });
                         }
@@ -254,7 +251,7 @@ impl Master {
     // Returns a 3 x num_floors matrix for updating panel lights. 
     // 3 x num_floors matrix for [hall up, hall down, cab] lights.
     fn make_light_matrix(&self, slave_number: usize, requests: MasterQueues) -> tcp::Message {
-        let mut new_matrix = vec![[false; 3]; NUMBER_OF_FLOORS];
+        let mut new_matrix = [[false; 3]; NUMBER_OF_FLOORS];
 
         for (floor, hall_call) in requests.hallRequests.iter().enumerate() {
             match hall_call {
