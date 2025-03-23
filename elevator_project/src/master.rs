@@ -59,7 +59,7 @@ impl MasterQueues {
         }
     }
 
-    pub fn get_next_order(&mut self, elevator_number: u8) -> Option<CallButton> {
+    pub fn get_next_order(&mut self, slave_number: usize) -> Option<CallButton> {
         // run the optimization algorithm
         // return the next order for the slaves
         let orders: HashMap<String, Vec<[bool; 3]>>;
@@ -81,17 +81,17 @@ impl MasterQueues {
 
         println!( "[Master] ORDERS: {:#?}", orders);
         
-        let elevator= self.states[elevator_number as usize].clone();
+        let elevator= self.states[slave_number].clone();
         if elevator.is_some() {
             let elevator = elevator.unwrap();
             match elevator.direction {
                 Direction::Down => {
                     for i in (0..elevator.floor).rev() {
                         println!("ned {}\n",i);
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
                             return Some(CallButton { floor: i as u8, call: HALL_DOWN });
                         }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
                             return Some(CallButton { floor: i as u8, call: CAB });
                         }
                     }
@@ -99,10 +99,10 @@ impl MasterQueues {
                 Direction::Up => {
                     for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
                         println!("opp {}\n",i);
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
                             return Some(CallButton { floor: i as u8, call: HALL_UP });
                         }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
                             return Some(CallButton { floor: i as u8, call: CAB });
                         }
                     }
@@ -110,13 +110,13 @@ impl MasterQueues {
                 Direction::Stop => {
                     for i in 0..NUMBER_OF_FLOORS as u8{
                         println!("stop opp{}\n",i);
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
                             return Some(CallButton { floor: i as u8, call: HALL_UP });
                         }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
                             return Some(CallButton { floor: i as u8, call: CAB });
                         }
-                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
                             return Some(CallButton { floor: i as u8, call: HALL_DOWN });
                         }
                     }
@@ -137,11 +137,14 @@ impl MasterQueues {
 
         let mut states = Map::new();
         for (key, state) in self.states.iter().enumerate() {
+            if state.is_none() {
+                continue;
+            }
             let state_object = json!({
-                "floor": state.floor,
-                "behaviour": state.behaviour.to_ascii_lowercase(),
-                "direction": state.direction.to_ascii_lowercase(),
-                "cabRequests": state.cab_requests,
+                "floor": state.unwrap().floor,
+                "behaviour": state.unwrap().behaviour.to_ascii_lowercase(),
+                "direction": state.unwrap().direction.to_ascii_lowercase(),
+                "cabRequests": state.unwrap().cab_requests,
             });
             states.insert(key.to_string(), state_object);
         }
@@ -171,7 +174,6 @@ pub struct Master {
     pub config                      : Config,                                                                     
     pub requests                    : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
     slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS ]>>,   // Vector of slave channels.
-    //number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
     backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
 }
@@ -187,9 +189,7 @@ impl Master {
         let mut master = Master {
             config                  : config.clone(),
             requests                : Arc::new(Mutex::new(master_queue)),
-            //orders                  : Vec::new(),
             slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),            // spørsmål???
-            //number_of_slaves        : Arc::new(Mutex::new(0)),
             master_to_backup_tx     : None,
             backup_disconected_rx   : cbc::unbounded().1,
         };
@@ -199,7 +199,6 @@ impl Master {
         let master_port             : u16 = config.master_port;
         let ip_config_clone         : [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list.clone();
         let slave_channels_clone    : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS] >> = Arc::clone(&master.slave_channels);
-        //let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.number_of_slaves);
         let requests_clone          : Arc<Mutex<MasterQueues>> = Arc::clone(&master.requests);
 
         // Thread for listening for new slave connections
@@ -216,6 +215,7 @@ impl Master {
                     },
                     std::net::IpAddr::V6(_ip) => { panic!("Fant IP_V6 adresse") }, // Panic for invalid ip
                 }; 
+                println!("[MASTER]\tslave number: {}", slave_number);
 
 
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
@@ -226,10 +226,6 @@ impl Master {
                 locked_channel[slave_number] = Some((master_to_slave_tx, slave_to_master_rx));
                 drop(locked_channel);
 
-  /*               let mut locked_num_slaves = num_slaves_clone.lock().unwrap();
-                *locked_num_slaves += 1;
-                drop(locked_num_slaves);
- */
                 let mut locked_requests = requests_clone.lock().unwrap();
                 locked_requests.states[slave_number] = Some(ElevatorState::init());
                 drop(locked_requests);
@@ -306,7 +302,7 @@ impl Master {
                 }
                 
                 // if the slave is connected, check for messages:
-                match locked_channels[slave_number].unwrap().1.try_recv() {
+                match locked_channels[slave_number].clone().unwrap().1.try_recv() {
                     Ok(message) => {
                         match message {
                             Message::NewOrder(call_button) => {// ditta vil altid vær en hall order no, sant?, so fjerna cab delen
@@ -331,7 +327,7 @@ impl Master {
                                                     i,
                                                     requests_locked.clone(),
                                                 );
-                                                locked_channels[i as usize].unwrap()
+                                                locked_channels[i].clone().unwrap()
                                                     .0
                                                     .send(light_matrix)
                                                     .unwrap();
@@ -364,8 +360,8 @@ impl Master {
                                             i,
                                             requests_locked.clone(),
                                         );
-                                        locked_channels[i as usize]
-                                            .unwrap().0
+                                        locked_channels[i].clone().unwrap()
+                                            .0
                                             .send(light_matrix)
                                             .unwrap();
                                         println!(
@@ -399,7 +395,9 @@ impl Master {
                                                     continue;
                                                 }
                                                 let light_matrix = self.make_light_matrix(i, requests_locked.clone());
-                                                locked_channels[i as usize].unwrap().0.send(light_matrix).unwrap();
+                                                locked_channels[i].clone().unwrap()
+                                                    .0
+                                                    .send(light_matrix).unwrap();
                                                 println!("[MASTER]\tSent light matrix to slave {}",i);
                                             }
                                         }
@@ -417,7 +415,9 @@ impl Master {
                                             continue;
                                         }
                                         let light_matrix = self.make_light_matrix(i, requests_locked.clone());
-                                        locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                        locked_channels[i].clone().unwrap()
+                                            .0
+                                            .send(light_matrix).unwrap();
                                         println!("[MASTER]\tSent light matrix to slave {}",i);
                                     }
                                 }
@@ -430,7 +430,7 @@ impl Master {
                                 match nxt_order {
                                     Some(_) => {
                                         let message = Message::NewOrder(nxt_order.unwrap());
-                                        locked_channels[slave_number]
+                                        locked_channels[slave_number].clone().unwrap()
                                             .0
                                             .send(message)
                                             .unwrap();
@@ -451,14 +451,16 @@ impl Master {
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
                                 let mut request_locked = self.requests.lock().unwrap();
-                                request_locked.states[slave_number as usize] = new_state;
+                                request_locked.states[slave_number] = Some(new_state);
                                 let light_matrix = self.make_light_matrix(slave_number,request_locked.clone());
-                                locked_channels[slave_number as usize].0 .send(light_matrix).unwrap();
+                                locked_channels[slave_number].clone().unwrap()
+                                    .0
+                                    .send(light_matrix).unwrap();
                                 let nxt_order = request_locked.get_next_order(slave_number);
                                 match nxt_order {
                                     Some(_) => {
                                         let message = Message::NewOrder(nxt_order.unwrap());
-                                        locked_channels[slave_number as usize]
+                                        locked_channels[slave_number].clone().unwrap()
                                             .0
                                             .send(message)
                                             .unwrap();
@@ -475,10 +477,8 @@ impl Master {
 
                             // Removes an disconected slave
                             Message::Error(_e) => {
-                                locked_channels.remove(slave_number as usize);
-                                self.requests.lock().unwrap().remove_elevator(slave_number); //kan hende vi ikkje kan fjerne i tilfelle den har mista strøm og kjem tilbake
-                                locked_num_slaves -= 1;
-                                
+                                locked_channels[slave_number] = None;
+                                //self.requests.lock().unwrap().remove_elevator(slave_number); //kan hende vi ikkje kan fjerne i tilfelle den har mista strøm og kjem tilbake                                
                             }
                             _ => {
                                 println!(

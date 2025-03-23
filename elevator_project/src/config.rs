@@ -7,7 +7,7 @@ use std::path::Path;
 use std::result::Result;
 
 pub const NUMBER_OF_FLOORS  : usize = 4;
-pub const NUMBER_OF_ELEVATORS: usize = 3;
+pub const NUMBER_OF_ELEVATORS: usize = 2;
 
 // Custom serde module for Vec<Ipv4Addr> serialization/deserialization
 mod ipv4_address_vec {
@@ -82,7 +82,7 @@ impl Display for Config {
             "Elevator IP list:\t\t{:?}\n\
             Master port:\t\t\t{}\n\
             Backup port:\t\t\t{}\n\
-            Slave port:\t\t\t{}\n
+            Slave port:\t\t\t{}\n\
             Door open duration [s]:\t\t{}\n\
             Input poll rate [ms]:\t\t{}\n\
             TCP timeout [ms]:\t\t{}",
