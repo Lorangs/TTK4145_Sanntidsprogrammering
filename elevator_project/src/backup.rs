@@ -87,17 +87,17 @@ fn handle_master_connection(
     tcp_timeout_ms: u64, // Not used. Need to bee a Duration to be passed to stream.set_read_timeout()
 ) //-> Result<(), cbc::RecvError>
 {
-    let mut encoded = [0; 1024];
+    let mut buffer: Vec<u8> = Vec::new();
     stream
         .set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms)))
         .expect("Failed to set read timeout");
 
     loop {
-        match stream.read(&mut encoded) {
+        match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
-                    let msg: Message =
-                        bincode::deserialize(&encoded[..size]).expect("Failed to deserialize message");
+                    println!("[BACKUP]\tReceived message from master: {:#?}", buffer);
+                    let msg: Message = bincode::deserialize(&buffer).expect("Failed to deserialize message");
                     println!("[BACKUP]\tReceived message from master: {:#?}", msg);
                     master_to_backup_tx.send(msg).unwrap();
                 }
@@ -111,7 +111,6 @@ fn handle_master_connection(
             Err(e) => { // då kan vi nokk forenkle eller fjerne dinna litt trudde den kom til å fange opp disconecten
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                     // No data available, continue the loop
-                    //println!("[BACKUP]\tNo data available");
                     continue;
                 } else {
                     // Connection lost or other error

@@ -4,7 +4,7 @@ use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
 
-use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
+use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, TcpListener, Ipv4Addr};
 use std::string::String;
@@ -24,7 +24,7 @@ pub struct OrderRequests {
     pub hallRequests       : [[bool; 2]; NUMBER_OF_FLOORS],   
     pub states             : [ElevatorState; NUMBER_OF_ELEVATORS]
 }
-//endre navn?
+
 impl OrderRequests {
     pub fn init() -> OrderRequests {
         let hallRequests    : [[bool; 2]; NUMBER_OF_FLOORS] = [[false; 2]; NUMBER_OF_FLOORS ];
@@ -57,7 +57,7 @@ impl OrderRequests {
         let orders: HashMap<String, Vec<[bool; 3]>>;
 
         let input = self.to_custom_json();
-        //println!("{}", input);
+
 
         let output = Command::new("../hall_request_assigner")
             .args(["--includeCab", "--input"])
@@ -111,7 +111,6 @@ impl OrderRequests {
         }
         return None; 
     }
-
     
     fn to_custom_json(&self) -> String {
         use serde_json::{json, Value, Map};
@@ -145,7 +144,7 @@ impl OrderRequests {
 
 
 impl FmtDisplay for OrderRequests {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         write!(
             f,
             "Hall queue: {:?}\n\
@@ -272,7 +271,7 @@ impl Master {
 
     fn update_backup(&self, requests: OrderRequests) -> Result<(), tcp::ErrorState>{
         if self.master_to_backup_tx.is_some() {
-            match self.master_to_backup_tx.as_ref().unwrap().send(Message::Backup(requests.clone())) {
+            match self.master_to_backup_tx.as_ref().unwrap().send(Message::Backup(requests)) {
                 Ok(_) => {
                     println!("[MASTER]\tSent order to backup");
                     return Ok(());
@@ -356,6 +355,7 @@ impl Master {
 
                             Message::Idle => {
                                 let mut locked_requests = self.requests.lock().unwrap();
+                                println!("[MASTER]\tloked_request {} ", locked_requests);
                                 let nxt_order = locked_requests.get_next_order(slave_number);
                                 match nxt_order {
                                     Some(_) => {
@@ -470,7 +470,7 @@ fn handle_slave_connection(
     slave_to_master_tx: cbc::Sender<tcp::Message>,
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
 ) {
-    let mut buffer = [0; 1024];
+    let mut buffer: Vec<u8> = vec![0; 1024];
     stream
         .set_nonblocking(true)
         .expect("Failed to set non-blocking mode on stream");    
@@ -479,10 +479,10 @@ fn handle_slave_connection(
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
-                    let recieved: tcp::Message = bincode::deserialize(&buffer[..size])
+                    let msg: Message = bincode::deserialize(&buffer[..size])
                         .expect("[MASTER]\tFailed to deserialize message from slave");
                     //println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
-                    slave_to_master_tx.send(recieved).unwrap();
+                    slave_to_master_tx.send(msg).unwrap();
                 }
             }
             Err(e) => {
@@ -524,8 +524,8 @@ fn handle_backup_connection(
     loop {
         match master_to_backup_rx.recv() {
             Ok(message) => {
-                let encoded =
-                    bincode::serialize(&message).expect("Failed to serialize message to backup");
+                let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
+                    
                 match stream.write(&encoded){
                     Ok(_)=>{println!("[MASTER]\tSent order to backup: {:#?}", message);}
                     Err(_)=>{
@@ -538,7 +538,6 @@ fn handle_backup_connection(
             }
             Err(_) => {
                 eprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                //todo!();
             }
         }
     }
