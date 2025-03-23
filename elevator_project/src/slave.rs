@@ -333,6 +333,7 @@ impl Slave {
             /**************local operation mode***************/
             if self.master_channels.is_none() {
                 cbc::select! {
+                    // Receive call button message from elevator
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
                         println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
@@ -352,7 +353,7 @@ impl Slave {
                         }
                     }
                     
-                    // Receive floor sensor message
+                    // Receive floor sensor message from elevator
                     recv(self.channels.floor_sensor_rx) -> msg => {
                         let floor_sensor = msg.unwrap();
                         println!("[SLAVE]\t\tReceived floor sensor message: {:#?}", floor_sensor);
@@ -377,7 +378,7 @@ impl Slave {
                         }
                     }
             
-                    // Receive stop button message
+                    // Receive stop button message from elevator
                     recv(self.channels.stop_button_rx) -> msg => {
                         let stop_button = msg.unwrap();
                         println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
@@ -412,9 +413,6 @@ impl Slave {
 
             /**************normal operation***************/
             else {
-                if self.state.behaviour == ElevatorBehaviour::Idle {
-                    self.send_idle();
-                }
                 cbc::select! {
                     // Receive floor sensor from elevator
                     recv(self.channels.floor_sensor_rx) -> msg => {
@@ -476,7 +474,6 @@ impl Slave {
                         let message = msg.unwrap();
                         match message {
                             tcp::Message::NewOrder(callbutton) => {
-                                // TEST if this is right!
                                 if self.state.behaviour == ElevatorBehaviour::Idle { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
                                     self.nxt_order = callbutton.clone();
                                     //println!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
@@ -503,6 +500,7 @@ impl Slave {
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
                             tcp::Message::StateUpdate(state) => {     
                                 self.state.cab_requests = state.cab_requests;
+                                self.send_state_update();
                                 //println!("[SLAVE]\t\tReceived state update");
                             },
                             tcp::Message::Error(_) => { 
@@ -524,7 +522,11 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {}, //får å få den til å ikkje spamme Idle til master
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*500)) => {
+                        if self.state.behaviour == ElevatorBehaviour::Idle {
+                            self.send_idle();
+                        }
+                    },
                 }// cbc::select
             } // else
         } // loop

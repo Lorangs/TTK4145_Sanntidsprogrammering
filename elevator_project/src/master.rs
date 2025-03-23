@@ -73,7 +73,7 @@ impl MasterQueues {
         else { return None; }
         
         let elevator= self.states[slave_number].clone();
-        if elevator.behaviour == ElevatorBehaviour::OutOfOrder {
+        if elevator.behaviour != ElevatorBehaviour::OutOfOrder {
             match elevator.direction {
                 Direction::Down => {
                     for i in (0..elevator.floor).rev() {
@@ -135,7 +135,6 @@ impl MasterQueues {
             });
             states.insert(key.to_string(), state_object);
         }
-        println!("{:?}", states);
 
         let result = json!({
             "hallRequests": hall_requests,
@@ -224,16 +223,14 @@ impl Master {
 
                         // send previous cab orders to slave
                         println!("[MASTER]\tSending previous orders to slave");
-                        if locked_requests.states[slave_number].behaviour != ElevatorBehaviour::OutOfOrder {
-                            locked_channel[slave_number]
-                                .as_ref()
-                                .unwrap()
-                                .0
-                                .send(Message::StateUpdate(locked_requests.states[slave_number]))
-                                .unwrap();
-                            drop(locked_requests);
-                            drop(locked_channel);
-                        }
+                        locked_channel[slave_number]
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .send(Message::StateUpdate(locked_requests.states[slave_number]))
+                            .unwrap();
+                        drop(locked_requests);
+                        drop(locked_channel);
                     },
                     Err(_) => {
                         eprintln!("[MASTER]\tFailed to establish connection to slave");
@@ -297,8 +294,8 @@ impl Master {
                     Ok(message) => {
                         match message {
                             Message::NewOrder(call_button) => {// ditta vil altid vær en hall order no, sant?, so fjerna cab delen
-                                let mut requests_locked = self.requests.lock().unwrap();
-                                requests_locked.update_hall_requests(call_button, true);
+                                let mut locked_requests = self.requests.lock().unwrap();
+                                locked_requests.update_hall_requests(call_button, true);
                                 println!("[MASTER]\tAdded order to hall queue: {}",call_button);
 
                                 if self.master_to_backup_tx.is_some() { //opdater backup, so alle slava
@@ -306,7 +303,7 @@ impl Master {
                                         .master_to_backup_tx
                                         .as_mut()
                                         .unwrap()
-                                        .send(Message::Backup(requests_locked.clone()))
+                                        .send(Message::Backup(locked_requests.clone()))
                                     {
                                         Ok(_) => {
                                             // Send lightmatrix to all connected slaves
@@ -316,7 +313,7 @@ impl Master {
                                                 }
                                                 let light_matrix = self.make_light_matrix(
                                                     i,
-                                                    requests_locked.clone(),
+                                                    locked_requests.clone(),
                                                 );
                                                 locked_channels[i].clone().unwrap()
                                                     .0
@@ -349,7 +346,7 @@ impl Master {
                                         }
                                         let light_matrix = self.make_light_matrix(
                                             i,
-                                            requests_locked.clone(),
+                                            locked_requests.clone(),
                                         );
                                         locked_channels[i].clone().unwrap()
                                             .0
@@ -368,9 +365,9 @@ impl Master {
                             }
 
                             Message::OrderComplete(call_button) => {
-                                let mut requests_locked = self.requests.lock().unwrap();
+                                let mut locked_requests = self.requests.lock().unwrap();
 
-                                requests_locked.update_hall_requests(call_button,false);
+                                locked_requests.update_hall_requests(call_button,false);
 
                                 if self.master_to_backup_tx.is_some() {
                                     // Send updated order list to backup
@@ -378,14 +375,14 @@ impl Master {
                                         .master_to_backup_tx
                                         .as_mut()
                                         .unwrap()
-                                        .send(Message::Backup(requests_locked.clone()))
+                                        .send(Message::Backup(locked_requests.clone()))
                                     {
                                         Ok(_) => {
                                             for i in 0..NUMBER_OF_ELEVATORS {
                                                 if locked_channels[i].is_none() {
                                                     continue;
                                                 }
-                                                let light_matrix = self.make_light_matrix(i, requests_locked.clone());
+                                                let light_matrix = self.make_light_matrix(i, locked_requests.clone());
                                                 locked_channels[i].clone().unwrap()
                                                     .0
                                                     .send(light_matrix).unwrap();
@@ -405,7 +402,7 @@ impl Master {
                                         if locked_channels[i].is_none() {
                                             continue;
                                         }
-                                        let light_matrix = self.make_light_matrix(i, requests_locked.clone());
+                                        let light_matrix = self.make_light_matrix(i, locked_requests.clone());
                                         locked_channels[i].clone().unwrap()
                                             .0
                                             .send(light_matrix).unwrap();
@@ -425,13 +422,11 @@ impl Master {
                                             .0
                                             .send(message)
                                             .unwrap();
-                                        println!(
-                                            "[MASTER]\t New order message sent"
-                                        );
+                                        println!("[MASTER]\tNew order message sent to slave:\t{}", slave_number);
                                     }
                                     None => {
                                         //todo!();
-                                        println!("[MASTER]\tNo orders available for slave {}", slave_number);
+                                        println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
                                     }
                                 }
                             }// idle og state update gjer basacly akkuratt de samme bruke en fungsjon kansje?
@@ -456,11 +451,10 @@ impl Master {
                                             .0
                                             .send(message)
                                             .unwrap();
-                                        println!("[MASTER]\t New order message sent");
+                                        println!("[MASTER]\tNew order message sent to slave:\t{}", slave_number);
                                     }
                                     None => {
-                                        //todo!();
-                                        println!("[MASTER]\tNo orders available for slave {}", slave_number);
+                                        println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
                                     }
                                 }
                             }
@@ -476,7 +470,6 @@ impl Master {
                                     "[MASTER]\tReceived unexpected message from slave {:#?}",
                                     message
                                 );
-                                todo!();
                             }
 
                         }
