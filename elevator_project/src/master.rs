@@ -3,10 +3,10 @@
 use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
+
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream, Ipv4Addr};
 use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
@@ -14,21 +14,21 @@ use std::time::Duration;
 use std::process::Command;
 use std::collections::HashMap;
 
-use crate::config::Config;
+use crate::config::{Config, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
 use crate::tcp::{self, CallButton, Message};
-use crate::slave::{self, Direction, ElevatorBehaviour, ElevatorState};
+use crate::slave::{Direction, ElevatorState};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MasterQueues {
     pub hallRequests       : Vec<[bool; 2]>,   
-    pub states     : Vec<ElevatorState>,
+    pub states             : [Option<ElevatorState>; NUMBER_OF_ELEVATORS]
 }
 //endre navn?
 impl MasterQueues {
     pub fn init() -> MasterQueues {
-        let hallRequests   : Vec<[bool; 2]> = vec![[false; 2]; slave::NUMBER_OF_FLOORS as usize];
-        let states : Vec<ElevatorState> = Vec::new();
+        let hallRequests    : Vec<[bool; 2]> = vec![[false; 2]; NUMBER_OF_FLOORS ];
+        let states          : [ Option<ElevatorState>; NUMBER_OF_ELEVATORS ] = [ None; NUMBER_OF_ELEVATORS ];
 
         MasterQueues {
             hallRequests,
@@ -36,21 +36,12 @@ impl MasterQueues {
         }
     }  
 
-    pub fn add_new_elevator(&mut self) {
-        self.states.push(ElevatorState { 
-            behaviour: ElevatorBehaviour::Idle, 
-            floor: 0, 
-            direction: Direction::Stop, 
-            cab_requests: [false; slave::NUMBER_OF_FLOORS as usize]
-        });
-    }
-
     pub fn remove_elevator(&mut self, slave_number: u8) {
-        self.states.remove(slave_number as usize);
+        self.states[slave_number as usize] = None;
     }
 
     pub fn update_elevator_state(&mut self, new_state: ElevatorState, slave_number: u8) {
-        self.states[slave_number as usize] = new_state;
+        self.states[slave_number as usize] = Some(new_state);
     }
 
     pub fn update_hall_requests(&mut self, call: tcp::CallButton, remove_or_add: bool) { //beire navn, men true for add, false for remove
@@ -71,7 +62,7 @@ impl MasterQueues {
     pub fn get_next_order(&mut self, elevator_number: u8) -> Option<CallButton> {
         // run the optimization algorithm
         // return the next order for the slaves
-        let mut orders: HashMap<String, Vec<[bool; 3]>>;
+        let orders: HashMap<String, Vec<[bool; 3]>>;
 
         let input = self.to_custom_json();
         println!("{}", input);
@@ -90,49 +81,48 @@ impl MasterQueues {
 
         println!( "[Master] ORDERS: {:#?}", orders);
         
-
         let elevator= self.states[elevator_number as usize].clone();
-
-        
-        match elevator.direction {
-            Direction::Down => {
-                for i in (0..elevator.floor).rev() {
-                    println!("ned {}\n",i);
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                        return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                    }
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                        return Some(CallButton { floor: i as u8, call: CAB });
-                    }
-                }
-            }
-            Direction::Up => {
-                for i in elevator.floor..slave::NUMBER_OF_FLOORS {
-                    println!("opp {}\n",i);
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                        return Some(CallButton { floor: i as u8, call: HALL_UP });
-                    }
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                        return Some(CallButton { floor: i as u8, call: CAB });
+        if elevator.is_some() {
+            let elevator = elevator.unwrap();
+            match elevator.direction {
+                Direction::Down => {
+                    for i in (0..elevator.floor).rev() {
+                        println!("ned {}\n",i);
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
                     }
                 }
-            }
-            Direction::Stop => {
-                for i in 0..slave::NUMBER_OF_FLOORS{
-                    println!("stop opp{}\n",i);
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                        return Some(CallButton { floor: i as u8, call: HALL_UP });
+                Direction::Up => {
+                    for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
+                        println!("opp {}\n",i);
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
                     }
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                        return Some(CallButton { floor: i as u8, call: CAB });
-                    }
-                    if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                        return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                }
+                Direction::Stop => {
+                    for i in 0..NUMBER_OF_FLOORS as u8{
+                        println!("stop opp{}\n",i);
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
+                        if orders.get(&elevator_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
                     }
                 }
             }
         }
-        
         return None; 
     }
 
@@ -180,8 +170,7 @@ impl FmtDisplay for MasterQueues {
 pub struct Master {
     pub config                      : Config,                                                                     
     pub requests                    : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
-    //orders                          : Vec<[bool; 3]>,                                                    // Vector of slaves order queues
-    slave_channels                  : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>>,   // Vector of slave channels.
+    slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS ]>>,   // Vector of slave channels.
     number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
     backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
@@ -199,7 +188,7 @@ impl Master {
             config                  : config.clone(),
             requests                : Arc::new(Mutex::new(master_queue)),
             //orders                  : Vec::new(),
-            slave_channels          : Arc::new(Mutex::new(Vec::new())),
+            slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),            // spørsmål???
             number_of_slaves        : Arc::new(Mutex::new(0)),
             master_to_backup_tx     : None,
             backup_disconected_rx   : cbc::unbounded().1,
@@ -208,7 +197,8 @@ impl Master {
         master.try_connect_to_new_backup();
 
         let master_port             : u16 = config.master_port;
-        let slave_channels_clone    : Arc<Mutex<Vec<(cbc::Sender<Message>, cbc::Receiver<Message>)>>> = Arc::clone(&master.slave_channels);
+        let ip_config_clone         : [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list.clone();
+        let slave_channels_clone    : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS] >> = Arc::clone(&master.slave_channels);
         let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.number_of_slaves);
         let requests_clone          : Arc<Mutex<MasterQueues>> = Arc::clone(&master.requests);
 

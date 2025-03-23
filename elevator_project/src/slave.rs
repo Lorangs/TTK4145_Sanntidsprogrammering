@@ -6,11 +6,9 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
-use crate::config::Config;
+use crate::config::{Config, NUMBER_OF_FLOORS};
 use crate::inputs;
 use crate::tcp;
-
-pub const NUMBER_OF_FLOORS: u8 = 4;
 
 // struct for orders in local operation mode
 #[derive(Debug, Clone, Copy)]
@@ -56,10 +54,20 @@ impl Direction {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ElevatorState {
-    pub behaviour   : ElevatorBehaviour,
-    pub floor       : u8,
-    pub direction   : Direction,
-    pub cab_requests: [bool; NUMBER_OF_FLOORS as usize],
+    pub behaviour           : ElevatorBehaviour,
+    pub floor               : u8,
+    pub direction           : Direction,
+    pub cab_requests        : [bool; NUMBER_OF_FLOORS],
+}
+impl ElevatorState{
+    pub fn init() -> ElevatorState {
+        ElevatorState {
+            behaviour       : ElevatorBehaviour::Idle,
+            floor           : 0,
+            direction       : Direction::Stop,
+            cab_requests    : [false; NUMBER_OF_FLOORS]
+        }
+    }
 }
 
 impl Display for ElevatorState {
@@ -91,7 +99,7 @@ pub struct Slave {
 impl Slave {
     pub fn init(slave_addr: String, config: &Config) -> Slave {
         let conf: Config = config.clone();
-        let elev: e::Elevator = e::Elevator::init(&slave_addr, config.number_of_floors)
+        let elev: e::Elevator = e::Elevator::init(&slave_addr, NUMBER_OF_FLOORS as u8)
         .expect("[SLAVE]\t\tFailed to initialize elevator");
     
         let chs: inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(
@@ -113,7 +121,7 @@ impl Slave {
             channels            : chs,
             master_channels     : None,
             door_timer          : cbc::unbounded::<bool>(),
-            light_matrix        : vec![[false; 3]; config.number_of_floors as usize],
+            light_matrix        : vec![[false; 3]; NUMBER_OF_FLOORS],
         };
         
         // Turns all lights off
@@ -501,8 +509,8 @@ impl Slave {
 
                                 // turn off all hall lights since we are in local mode and no longer take hall orders
                                 for i in 0..NUMBER_OF_FLOORS {
-                                    self.elevator.call_button_light(i, e::HALL_UP, false);
-                                    self.elevator.call_button_light(i, e::HALL_DOWN, false);
+                                    self.elevator.call_button_light(i as u8, e::HALL_UP, false);
+                                    self.elevator.call_button_light(i as u8, e::HALL_DOWN, false);
                                 }
                                 if self.state.behaviour == ElevatorBehaviour::Idle{ 
                                     self.sync_lights_local();
@@ -524,7 +532,7 @@ impl Slave {
     /************ functions for local operation mode **************/
 
     fn orders_above(&mut self) -> bool{
-        for floor in (self.state.floor + 1) .. self.config.number_of_floors {
+        for floor in (self.state.floor + 1) .. NUMBER_OF_FLOORS as u8 {
             if self.state.cab_requests[floor as usize] {
                 self.nxt_order = tcp::CallButton { floor: floor, call: 2};
                 return true;

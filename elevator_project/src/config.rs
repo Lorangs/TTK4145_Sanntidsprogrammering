@@ -6,8 +6,8 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::result::Result;
 
-
-
+pub const NUMBER_OF_FLOORS  : usize = 4;
+pub const NUMBER_OF_ELEVATORS: usize = 3;
 
 // Custom serde module for Vec<Ipv4Addr> serialization/deserialization
 mod ipv4_address_vec {
@@ -48,12 +48,10 @@ mod ipv4_address_vec {
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
     #[serde(with = "ipv4_address_vec")]
-    pub elevator_ip_list: Vec<Ipv4Addr>,
+    pub elevator_ip_list: [Ipv4Addr; NUMBER_OF_ELEVATORS],
     pub master_port: u16,
     pub backup_port: u16,
     pub slave_port: u16,
-    pub number_of_floors: u8,
-    pub number_of_elevators: u8,
     pub door_open_duration_s: f32,
     pub input_poll_rate_ms: u64,
     pub tcp_timeout_ms: u64,
@@ -69,8 +67,6 @@ impl Display for Config {
             Master port:\t\t\t{}\n\
             Backup port:\t\t\t{}\n\
             Slave port:\t\t\t{}\n
-            Number of floors:\t\t{}\n\
-            Number of elevators:\t\t{}\n\
             Door open duration [s]:\t\t{}\n\
             Input poll rate [ms]:\t\t{}\n\
             TCP timeout [ms]:\t\t{}",
@@ -78,8 +74,6 @@ impl Display for Config {
             self.master_port,
             self.backup_port,
             self.slave_port,
-            self.number_of_floors,
-            self.number_of_elevators,
             self.door_open_duration_s,
             self.input_poll_rate_ms,
             self.tcp_timeout_ms
