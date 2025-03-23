@@ -31,7 +31,7 @@ impl ElevatorBehaviour{
             ElevatorBehaviour::Idle => "idle",
             ElevatorBehaviour::Moving => "moving",
             ElevatorBehaviour::DoorOpen => "doorOpen",
-            ElevatorBehaviour::OutOfOrder => "out_of_order",
+            ElevatorBehaviour::OutOfOrder => "outOfOrder",
         }
     }
 }
@@ -461,6 +461,7 @@ impl Slave {
                             //println!("Obstruction detected. Timer reset.");
                             self.start_door_timer(Duration::from_secs(3));
                             println!("[SLAVE]\t\tObstruction detected. Timer reset.");
+                            self.send_state_update(); //sånn at lysmatrisa blir oppdatert skjølv om heisen e stuck
                         }
                         else {
                             println!("[SLAVE]\t\tTimer expired. Door closing.");

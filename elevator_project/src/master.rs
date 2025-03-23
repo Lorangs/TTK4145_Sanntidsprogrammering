@@ -96,7 +96,18 @@ impl OrderRequests {
                     }
                 }
                 Direction::Stop => {
-                    for i in 0..NUMBER_OF_FLOORS as u8{
+                    for i in elevator.floor..NUMBER_OF_FLOORS as u8{
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
+                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
+                    }// har 2 for loop sånn at den tar nermaste ordrane først, men blei litt masse kode
+                    for i in (0..elevator.floor).rev() {
                         if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
                             return Some(CallButton { floor: i as u8, call: HALL_UP });
                         }
@@ -138,7 +149,6 @@ impl OrderRequests {
             "hallRequests": hall_requests,
             "states": states,
         }); 
-        println!("{}", serde_json::to_string(&result).unwrap());
         serde_json::to_string(&result).unwrap()
     }
 }
@@ -355,7 +365,6 @@ impl Master {
 
                             Message::Idle => {
                                 let mut locked_requests = self.requests.lock().unwrap();
-                                println!("[MASTER]\tloked_request {} ", locked_requests);
                                 let nxt_order = locked_requests.get_next_order(slave_number);
                                 match nxt_order {
                                     Some(_) => {
@@ -364,7 +373,7 @@ impl Master {
                                             .0
                                             .send(message)
                                             .unwrap();
-                                        println!("[MASTER]\tNew order message sent to slave:\t{}", slave_number);
+                                        println!("[MASTER]\tNew order message sent to slave:{}, order {}", slave_number, nxt_order.unwrap());
                                     }
                                     None => {
                                         println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
@@ -396,7 +405,7 @@ impl Master {
                                             .0
                                             .send(message)
                                             .unwrap();
-                                        println!("[MASTER]\tNew order message sent to slave:\t{}", slave_number);
+                                        println!("[MASTER]\tNew order message sent to slave:{}, order{}", slave_number, nxt_order.unwrap());
                                     }
                                     None => {
                                         println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
@@ -462,9 +471,6 @@ impl Master {
     }
 }
 
-
-
-// Handles the individual slave connections
 fn handle_slave_connection(
     mut stream: TcpStream,
     slave_to_master_tx: cbc::Sender<tcp::Message>,
@@ -506,7 +512,6 @@ fn handle_slave_connection(
                         slave_to_master_tx.send(Message::Error(tcp::ErrorState::Network)).unwrap();
                     }
                 }
-                //println!("[MASTER]\tSent message to slave: {:#?}", message);
             }
             Err(_e) => {
                 continue;
@@ -515,7 +520,6 @@ fn handle_slave_connection(
     }
 }
 
-// Handles the backup connection. 
 fn handle_backup_connection(
     mut stream: TcpStream,
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
@@ -525,7 +529,6 @@ fn handle_backup_connection(
         match master_to_backup_rx.recv() {
             Ok(message) => {
                 let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
-                println!("[MASTER]\tSending message to backup: {:?}", encoded);
                 match stream.write(&encoded){
                     Ok(_)=>{println!("[MASTER]\tSent order to backup: {:#?}", message);}
                     Err(_)=>{
