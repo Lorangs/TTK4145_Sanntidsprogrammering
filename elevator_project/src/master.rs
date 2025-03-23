@@ -425,6 +425,9 @@ impl Master {
                                     }
                                 }
                             }// idle og state update gjer basacly akkuratt de samme bruke en fungsjon kansje?
+
+
+                            
                             
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
