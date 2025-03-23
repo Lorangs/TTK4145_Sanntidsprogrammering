@@ -96,14 +96,15 @@ fn handle_master_connection(
         match stream.read(&mut encoded) {
             Ok(size) => {
                 if size > 0 {
-                    let received: Message =
+                    let msg: Message =
                         bincode::deserialize(&encoded[..size]).expect("Failed to deserialize message");
-                    master_to_backup_tx.send(received).unwrap();
+                    println!("[BACKUP]\tReceived message from master: {:#?}", msg);
+                    master_to_backup_tx.send(msg).unwrap();
                 }
                 else{ //e dinna so blir utført vist eg drepe master
                     println!("[BACKUP]\t Lost conection to master");
-                    let message = Message::Error(ErrorState::Network);
-                    master_to_backup_tx.send(message).unwrap();
+                    let msg = Message::Error(ErrorState::Network);
+                    master_to_backup_tx.send(msg).unwrap();
                     break;
                 }
             }
@@ -115,8 +116,8 @@ fn handle_master_connection(
                 } else {
                     // Connection lost or other error
                     println!("[BACKUP]\tError: {}", e);
-                    let message = Message::Error(ErrorState::Network);
-                    master_to_backup_tx.send(message).unwrap();
+                    let msg = Message::Error(ErrorState::Network);
+                    master_to_backup_tx.send(msg).unwrap();
                     break;
                 }
             }

@@ -4,7 +4,6 @@ use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
 
-use std::f32::consts::E;
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, TcpListener, Ipv4Addr};

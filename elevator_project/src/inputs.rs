@@ -116,9 +116,9 @@ pub fn spawn_thread_for_master_connection
             match stream.read(&mut encoded) {
                 Ok(size) => {
                     if size > 0 {
-                        let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
-                        println!("[SLAVE]\t\tReceived message from master: {:#?}", message);
-                        master_to_slave_tx.send(message).unwrap();
+                        let msg: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                        println!("[SLAVE]\t\tReceived message from master: {:#?}", msg);
+                        master_to_slave_tx.send(msg).unwrap();
                     }
                 }
                 Err(e) => {

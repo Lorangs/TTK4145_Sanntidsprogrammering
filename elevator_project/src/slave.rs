@@ -1,6 +1,6 @@
-use driver_rust::elevio::elev as e;
+
 use crossbeam_channel as cbc;
-use driver_rust::elevio::poll::CallButton;
+use driver_rust::elevio::elev::{self as e, HALL_DOWN, HALL_UP, CAB, DIRN_DOWN, DIRN_UP, DIRN_STOP};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
@@ -184,11 +184,11 @@ impl Slave {
         for (floor_index, light_array) in self.light_matrix.iter().enumerate() {
             let floor = floor_index as u8;
             self.elevator
-                .call_button_light(floor, e::HALL_UP, light_array[0]);
+                .call_button_light(floor, HALL_UP, light_array[0]);
             self.elevator
-                .call_button_light(floor, e::HALL_DOWN, light_array[1]);
+                .call_button_light(floor, HALL_DOWN, light_array[1]);
             self.elevator
-                .call_button_light(floor, e::CAB, light_array[2]);
+                .call_button_light(floor, CAB, light_array[2]);
         }
     }
 
@@ -511,8 +511,8 @@ impl Slave {
 
                                 // turn off all hall lights since we are in local mode and no longer take hall orders
                                 for i in 0..NUMBER_OF_FLOORS {
-                                    self.elevator.call_button_light(i as u8, e::HALL_UP, false);
-                                    self.elevator.call_button_light(i as u8, e::HALL_DOWN, false);
+                                    self.elevator.call_button_light(i as u8, HALL_UP, false);
+                                    self.elevator.call_button_light(i as u8, HALL_DOWN, false);
                                 }
                                 if self.state.behaviour == ElevatorBehaviour::Idle{ 
                                     self.sync_lights_local();
@@ -540,7 +540,7 @@ impl Slave {
     fn orders_above(&mut self) -> bool{
         for floor in (self.state.floor + 1) .. NUMBER_OF_FLOORS as u8 {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = tcp::CallButton { floor: floor, call: 2};
+                self.nxt_order = tcp::CallButton { floor: floor, call: CAB};
                 return true;
             }
         }
@@ -550,7 +550,7 @@ impl Slave {
     fn orders_below(&mut self) -> bool {
         for floor in 0 .. self.state.floor {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = tcp::CallButton { floor: floor, call: e::CAB};
+                self.nxt_order = tcp::CallButton { floor: floor, call: CAB};
                 return true;
             }  
         }
@@ -604,7 +604,7 @@ impl Slave {
 
     fn start_moving_local(&mut self) {
         let (diraction, behaviour) = self.choose_direction();
-        self.nxt_order = tcp::CallButton { floor: 1, call: 2};
+        self.nxt_order = tcp::CallButton { floor: 1, call: CAB};
         self.state.behaviour = behaviour;
         
         if behaviour == ElevatorBehaviour::DoorOpen {
