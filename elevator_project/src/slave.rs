@@ -205,7 +205,6 @@ impl Slave {
     fn send_new_order(&mut self, callbutton: tcp::CallButton) {
         let message = tcp::Message::NewOrder(callbutton.clone());
 
-
         if self.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Cannot send order.");
             return;
@@ -213,7 +212,8 @@ impl Slave {
 
         match callbutton.call {
             0_u8..=1_u8 => {
-                match self.master_channels.as_mut().unwrap().0.send(message) {
+                match   self.master_channels
+                            .as_mut().unwrap().0.send(message) {
                     Ok(_) => {},
                     Err(e) => {
                         println!("[SLAVE]\t\tFailed to send order: {}", e);
@@ -501,6 +501,11 @@ impl Slave {
                                 self.light_matrix = matrix;
                                 //println!("[SLAVE]\t\tReceived light matrix");
                                 self.sync_lights_normal();
+                            },
+                            // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
+                            tcp::Message::StateUpdate(state) => {     
+                                self.state.cab_requests = state.cab_requests;
+                                //println!("[SLAVE]\t\tReceived state update");
                             },
                             tcp::Message::Error(_) => { 
                                 println!("[SLAVE]\t\tReceived error message from master"); 

@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use crate::config::{Config, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
 use crate::tcp::{self, CallButton, Message};
-use crate::slave::{Direction, ElevatorState};
+use crate::slave::{self, Direction, ElevatorState};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -40,10 +40,6 @@ impl MasterQueues {
         self.states[slave_number as usize] = None;
     }
 
-    pub fn update_elevator_state(&mut self, new_state: ElevatorState, slave_number: u8) {
-        self.states[slave_number as usize] = Some(new_state);
-    }
-
     pub fn update_hall_requests(&mut self, call: tcp::CallButton, remove_or_add: bool) { //beire navn, men true for add, false for remove
         match call.call {
             HALL_UP => {
@@ -65,7 +61,7 @@ impl MasterQueues {
         let orders: HashMap<String, Vec<[bool; 3]>>;
 
         let input = self.to_custom_json();
-        println!("{}", input);
+        //println!("{}", input);
 
         let output = Command::new("../hall_request_assigner")
             .args(["--includeCab", "--input"])
@@ -78,8 +74,6 @@ impl MasterQueues {
             orders = serde_json::from_slice(&output.stdout).unwrap();
         } 
         else { return None; }
-
-        println!( "[Master] ORDERS: {:#?}", orders);
         
         let elevator= self.states[slave_number].clone();
         if elevator.is_some() {
@@ -212,22 +206,16 @@ impl Master {
                     },
                     std::net::IpAddr::V6(_ip) => { panic!("Fant IP_V6 adresse") }, // Panic for invalid ip
                 }; 
-                println!("[MASTER]\tslave number: {}", slave_number);
-
-
+                
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
                 let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
                 
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
-
                 locked_channel[slave_number] = Some((master_to_slave_tx, slave_to_master_rx));
-                drop(locked_channel);
 
-                let mut locked_requests = requests_clone.lock().unwrap();
-                locked_requests.states[slave_number] = Some(ElevatorState::init());
-                drop(locked_requests);
+                let locked_requests = requests_clone.lock().unwrap();
 
-                println!("[MASTER]\tGot new stream");
+                println!("[MASTER]\tGot new stream: {}", slave_number);
 
                 match stream {
                     Ok(stream) => {
@@ -235,10 +223,22 @@ impl Master {
                             "[MASTER]\tNew slave connection established: {}",
                             stream.peer_addr().unwrap()
                         );
-                        spawn(|| {
-                            handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx)
-                        });
-                    }
+                        spawn(|| handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx));
+
+                        // send previous cab orders to slave
+                        println!("[MASTER]\tSending previous orders to slave");
+                        if locked_requests.states[slave_number].is_some() {
+                            
+                            locked_channel [slave_number]
+                                .as_ref()
+                                .unwrap()
+                                .0
+                                .send(Message::StateUpdate(locked_requests.states[slave_number].unwrap()))
+                                .unwrap();
+                            drop(locked_requests);
+                            drop(locked_channel);
+                        }
+                    },
                     Err(_) => {
                         eprintln!("[MASTER]\tFailed to establish connection to slave");
                     }
@@ -461,9 +461,7 @@ impl Master {
                                             .0
                                             .send(message)
                                             .unwrap();
-                                        println!(
-                                            "[MASTER]\t New order message sent"
-                                        );
+                                        println!("[MASTER]\t New order message sent");
                                     }
                                     None => {
                                         //todo!();
@@ -535,14 +533,15 @@ fn handle_slave_connection(
     let mut buffer = [0; 1024];
     stream
         .set_nonblocking(true)
-        .expect("Failed to set non-blocking mode on stream");
+        .expect("Failed to set non-blocking mode on stream");    
+
     loop {
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
                     let recieved: tcp::Message = bincode::deserialize(&buffer[..size])
                         .expect("[MASTER]\tFailed to deserialize message from slave");
-                    println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
+                    //println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
                     slave_to_master_tx.send(recieved).unwrap();
                 }
             }
@@ -567,7 +566,7 @@ fn handle_slave_connection(
                         slave_to_master_tx.send(Message::Error(tcp::ErrorState::Network)).unwrap();
                     }
                 }
-                println!("[MASTER]\tSent message to slave: {:#?}", message);
+                //println!("[MASTER]\tSent message to slave: {:#?}", message);
             }
             Err(_e) => {
                 continue;
