@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use std::fmt::{Display as FmtDisplay, Formatter, Result as FmtResult};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream, Ipv4Addr};
+use std::net::{SocketAddr, TcpStream, TcpListener, Ipv4Addr};
 use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
@@ -171,7 +171,7 @@ pub struct Master {
     pub config                      : Config,                                                                     
     pub requests                    : Arc<Mutex<MasterQueues>>,                                          // Vector of slaves order queues
     slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS ]>>,   // Vector of slave channels.
-    number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
+    //number_of_slaves                : Arc<Mutex<u8>>,                                                    // Variable for number of slaves in operation
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
     backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
 }
@@ -189,7 +189,7 @@ impl Master {
             requests                : Arc::new(Mutex::new(master_queue)),
             //orders                  : Vec::new(),
             slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),            // spørsmål???
-            number_of_slaves        : Arc::new(Mutex::new(0)),
+            //number_of_slaves        : Arc::new(Mutex::new(0)),
             master_to_backup_tx     : None,
             backup_disconected_rx   : cbc::unbounded().1,
         };
@@ -199,7 +199,7 @@ impl Master {
         let master_port             : u16 = config.master_port;
         let ip_config_clone         : [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list.clone();
         let slave_channels_clone    : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS] >> = Arc::clone(&master.slave_channels);
-        let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.number_of_slaves);
+        //let num_slaves_clone        : Arc<Mutex<u8>> = Arc::clone(&master.number_of_slaves);
         let requests_clone          : Arc<Mutex<MasterQueues>> = Arc::clone(&master.requests);
 
         // Thread for listening for new slave connections
@@ -207,19 +207,31 @@ impl Master {
             let listener = // e de beire å bruke elevator ip list hær sånn at vi kan huske ordrane til heisa?
                 TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
             for stream in listener.incoming() {
+
+                let slave_number: usize;
+                match stream.as_ref().unwrap().peer_addr().unwrap().ip(){
+                    std::net::IpAddr::V4(ip) => { 
+                        let ip = ip_config_clone.iter().position(|&x| x == ip).unwrap();
+                        slave_number = ip;
+                    },
+                    std::net::IpAddr::V6(_ip) => { panic!("Fant IP_V6 adresse") }, // Panic for invalid ip
+                }; 
+
+
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
                 let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
                 
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
-                locked_channel.push((master_to_slave_tx, slave_to_master_rx));
+
+                locked_channel[slave_number] = Some((master_to_slave_tx, slave_to_master_rx));
                 drop(locked_channel);
 
-                let mut locked_num_slaves = num_slaves_clone.lock().unwrap();
+  /*               let mut locked_num_slaves = num_slaves_clone.lock().unwrap();
                 *locked_num_slaves += 1;
                 drop(locked_num_slaves);
-
+ */
                 let mut locked_requests = requests_clone.lock().unwrap();
-                locked_requests.add_new_elevator();
+                locked_requests.states[slave_number] = Some(ElevatorState::init());
                 drop(locked_requests);
 
                 println!("[MASTER]\tGot new stream");
@@ -234,9 +246,8 @@ impl Master {
                             handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx)
                         });
                     }
-                    Err(e) => {
-                        eprintln!("[MASTER]\tFailed to establish connection to slave: {}", e);
-                        todo!();
+                    Err(_) => {
+                        eprintln!("[MASTER]\tFailed to establish connection to slave");
                     }
                 }
             }
@@ -246,8 +257,8 @@ impl Master {
 
     // Returns a 3 x num_floors matrix for updating panel lights. 
     // 3 x num_floors matrix for [hall up, hall down, cab] lights.
-    fn make_light_matrix(&self, slave_number: u8, requests: MasterQueues) -> tcp::Message {
-        let mut new_matrix = vec![[false; 3]; self.config.number_of_floors as usize];
+    fn make_light_matrix(&self, slave_number: usize, requests: MasterQueues) -> tcp::Message {
+        let mut new_matrix = vec![[false; 3]; NUMBER_OF_FLOORS];
 
         for (floor, hall_call) in requests.hallRequests.iter().enumerate() {
             match hall_call {
@@ -268,7 +279,7 @@ impl Master {
             }
         }
 
-        for (floor, cab_call) in requests.states[slave_number as usize].cab_requests.iter().enumerate() {
+        for (floor, cab_call) in requests.states[slave_number].unwrap().cab_requests.iter().enumerate() {
             if *cab_call{
                 new_matrix[floor][2] = true;
             }
@@ -282,14 +293,20 @@ impl Master {
             if self.backup_disconected_rx.try_recv().is_ok() {
                 self.master_to_backup_tx = None;
             }
-            if self.master_to_backup_tx.is_none() { //fjerne?
+            if self.master_to_backup_tx.is_none() { 
                 self.try_connect_to_new_backup();
             }
 
-            let mut locked_num_slaves = *self.number_of_slaves.lock().unwrap();
-            for slave_number in 0..locked_num_slaves {
+            for slave_number in 0..NUMBER_OF_ELEVATORS {
                 let mut locked_channels = self.slave_channels.lock().unwrap();
-                match locked_channels[slave_number as usize].1.try_recv() {
+
+                // No connected slave at this IP adress. Skip to next
+                if locked_channels[slave_number].is_none() {
+                    continue;
+                }
+                
+                // if the slave is connected, check for messages:
+                match locked_channels[slave_number].unwrap().1.try_recv() {
                     Ok(message) => {
                         match message {
                             Message::NewOrder(call_button) => {// ditta vil altid vær en hall order no, sant?, so fjerna cab delen
@@ -305,13 +322,16 @@ impl Master {
                                         .send(Message::Backup(requests_locked.clone()))
                                     {
                                         Ok(_) => {
-                                            // Send lightmatrix to all slaves
-                                            for i in 0..locked_num_slaves {
+                                            // Send lightmatrix to all connected slaves
+                                            for i in 0..NUMBER_OF_ELEVATORS {
+                                                if locked_channels[i].is_none() {
+                                                    continue;
+                                                }
                                                 let light_matrix = self.make_light_matrix(
                                                     i,
                                                     requests_locked.clone(),
                                                 );
-                                                locked_channels[i as usize]
+                                                locked_channels[i as usize].unwrap()
                                                     .0
                                                     .send(light_matrix)
                                                     .unwrap();
@@ -336,13 +356,16 @@ impl Master {
                                 }
                                 else {
                                     println!("[MASTER]\tNo backup connected, asuming I am the onely pc in operation");
-                                    for i in 0..locked_num_slaves {
+                                    for i in 0..NUMBER_OF_ELEVATORS {
+                                        if locked_channels[i].is_none() {
+                                            continue;
+                                        }
                                         let light_matrix = self.make_light_matrix(
                                             i,
                                             requests_locked.clone(),
                                         );
                                         locked_channels[i as usize]
-                                            .0
+                                            .unwrap().0
                                             .send(light_matrix)
                                             .unwrap();
                                         println!(
@@ -371,9 +394,12 @@ impl Master {
                                         .send(Message::Backup(requests_locked.clone()))
                                     {
                                         Ok(_) => {
-                                            for i in 0..locked_num_slaves {
+                                            for i in 0..NUMBER_OF_ELEVATORS {
+                                                if locked_channels[i].is_none() {
+                                                    continue;
+                                                }
                                                 let light_matrix = self.make_light_matrix(i, requests_locked.clone());
-                                                locked_channels[i as usize].0.send(light_matrix).unwrap();
+                                                locked_channels[i as usize].unwrap().0.send(light_matrix).unwrap();
                                                 println!("[MASTER]\tSent light matrix to slave {}",i);
                                             }
                                         }
@@ -386,7 +412,10 @@ impl Master {
                                 }
                                 else{
                                     println!("[MASTER]\tNo backup connected, asuming I am the onely pc in operation");
-                                    for i in 0..locked_num_slaves {
+                                    for i in 0..NUMBER_OF_ELEVATORS {
+                                        if locked_channels[i].is_none() {
+                                            continue;
+                                        }
                                         let light_matrix = self.make_light_matrix(i, requests_locked.clone());
                                         locked_channels[i as usize].0.send(light_matrix).unwrap();
                                         println!("[MASTER]\tSent light matrix to slave {}",i);
@@ -401,7 +430,7 @@ impl Master {
                                 match nxt_order {
                                     Some(_) => {
                                         let message = Message::NewOrder(nxt_order.unwrap());
-                                        locked_channels[slave_number as usize]
+                                        locked_channels[slave_number]
                                             .0
                                             .send(message)
                                             .unwrap();

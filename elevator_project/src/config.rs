@@ -15,7 +15,9 @@ mod ipv4_address_vec {
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 
-    pub fn serialize<S>(addresses: &Vec<Ipv4Addr>, serializer: S) -> Result<S::Ok, S::Error>
+    use super::NUMBER_OF_ELEVATORS;
+
+    pub fn serialize<S>(addresses: &[Ipv4Addr;NUMBER_OF_ELEVATORS], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -36,24 +38,23 @@ mod ipv4_address_vec {
         // Convert strings to Ipv4Addr
         let vec: Result<Vec<Ipv4Addr>, _> = str_addresses
             .iter()
-            .map(|s| Ipv4Addr::from_str(s).map_err(serde::de::Error::custom))
+            .map(|s| Ipv4Addr::from_str(s))
             .collect();
 
         // Ensure the vector has the correct length
-        if vec.len() != NUMBER_OF_ELEVATORS {
+        if vec.clone().unwrap().len() != NUMBER_OF_ELEVATORS {
             return Err(serde::de::Error::custom(format!(
                 "Expected {} IP addresses, but got {}",
                 NUMBER_OF_ELEVATORS,
-                vec.len()
+                vec.unwrap().len()
             )));
         }
 
         // Convert Vec to array
         let mut array = [Ipv4Addr::new(0, 0, 0, 0); NUMBER_OF_ELEVATORS];
-        for (i, addr) in vec.into_iter().enumerate() {
+        for (i, addr) in vec.unwrap().into_iter().enumerate() {
             array[i] = addr;
         }
-
         Ok(array)
     }
 }
