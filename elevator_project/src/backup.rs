@@ -3,6 +3,7 @@ use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
+use bincode;
 
 use crate::config::Config;
 use crate::master::OrderRequests;
@@ -96,13 +97,13 @@ fn handle_master_connection(
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
-                    println!("[BACKUP]\tReceived message from master: {:#?}", buffer);
+                    println!("[BACKUP]\tReceived message from master: {:?}", buffer);
                     let msg: Message = bincode::deserialize(&buffer).expect("Failed to deserialize message");
                     println!("[BACKUP]\tReceived message from master: {:#?}", msg);
                     master_to_backup_tx.send(msg).unwrap();
                 }
                 else{ //e dinna so blir utført vist eg drepe master
-                    println!("[BACKUP]\t Lost conection to master");
+                    println!("[BACKUP]\tLost conection to master");
                     let msg = Message::Error(ErrorState::Network);
                     master_to_backup_tx.send(msg).unwrap();
                     break;

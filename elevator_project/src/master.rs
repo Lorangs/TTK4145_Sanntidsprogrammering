@@ -3,6 +3,7 @@
 use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
+use bincode;
 
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::{Read, Write};
@@ -525,7 +526,7 @@ fn handle_backup_connection(
         match master_to_backup_rx.recv() {
             Ok(message) => {
                 let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
-                    
+                println!("[MASTER]\tSending message to backup: {:?}", encoded);
                 match stream.write(&encoded){
                     Ok(_)=>{println!("[MASTER]\tSent order to backup: {:#?}", message);}
                     Err(_)=>{

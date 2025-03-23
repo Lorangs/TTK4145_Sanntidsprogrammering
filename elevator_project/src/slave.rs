@@ -126,7 +126,7 @@ impl Slave {
         // Initiate elevator position and lights to the nearest floor in downwards direction
         slave.state.behaviour = ElevatorBehaviour::Moving;
         slave.state.direction = Direction::Down;
-        slave.elevator.motor_direction(e::DIRN_DOWN);
+        slave.elevator.motor_direction(DIRN_DOWN);
         loop {
             cbc::select! {
                 recv(slave.channels.floor_sensor_rx) -> msg => {
@@ -134,7 +134,7 @@ impl Slave {
                     println!("Received floor sensor message: {:#?}", floor_sensor);
                     slave.state.floor = floor_sensor;
                     if slave.state.floor !=u8::MAX{
-                        slave.elevator.motor_direction(e::DIRN_STOP);
+                        slave.elevator.motor_direction(DIRN_STOP);
                         slave.state.direction = Direction::Stop;
                         slave.state.behaviour = ElevatorBehaviour::Idle;
                         slave.elevator.floor_indicator(slave.state.floor as u8);
@@ -169,7 +169,7 @@ impl Slave {
                     //self.send_state_update(); trur ikkje vi trenge ditta siden det blir gjort inne i set behavior og
                     //Stop the elevator, and let the master decide what to do 
                     //ditta gjær at de blir et lite hakk, men e de innafor siden de e beire en at den kjøre utforbi
-                    self.elevator.motor_direction(e::DIRN_STOP);
+                    self.elevator.motor_direction(DIRN_STOP);
                     self.set_behaviour(ElevatorBehaviour::Idle);
                     return;
                 },
@@ -235,7 +235,7 @@ impl Slave {
         self.state.cab_requests[self.state.floor as usize]   = false;
         self.send_state_update();
 
-         if self.nxt_order.call != e::CAB{
+         if self.nxt_order.call != CAB{
             let message = tcp::Message::OrderComplete(self.nxt_order);
             
             if self.master_channels.is_none() {
@@ -294,9 +294,9 @@ impl Slave {
             self.set_behaviour(ElevatorBehaviour::Moving);
         }
         match self.state.direction {
-            Direction::Stop => self.elevator.motor_direction(e::DIRN_STOP),
-            Direction::Down => self.elevator.motor_direction(e::DIRN_DOWN),
-            Direction::Up   => self.elevator.motor_direction(e::DIRN_UP),
+            Direction::Stop => self.elevator.motor_direction(DIRN_STOP),
+            Direction::Down => self.elevator.motor_direction(DIRN_DOWN),
+            Direction::Up   => self.elevator.motor_direction(DIRN_UP),
         }
     }
 
@@ -370,7 +370,7 @@ impl Slave {
                                     self.elevator.door_light(true);
                                     self.clear_at_current_floor();
                                     self.sync_lights_local();
-                                    self.elevator.motor_direction(e::DIRN_STOP);
+                                    self.elevator.motor_direction(DIRN_STOP);
             
                                     self.start_door_timer(Duration::from_secs(3));    // starting doortimer
                                 }
@@ -383,7 +383,7 @@ impl Slave {
                     recv(self.channels.stop_button_rx) -> msg => {
                         let stop_button = msg.unwrap();
                         println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
-                        self.elevator.motor_direction(e::DIRN_STOP);
+                        self.elevator.motor_direction(DIRN_STOP);
                         self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                     }
             
@@ -423,7 +423,7 @@ impl Slave {
                         self.elevator.floor_indicator(self.state.floor);
                         if self.state.floor == self.nxt_order.floor{
                             self.state.direction = Direction::Stop;
-                            self.elevator.motor_direction(e::DIRN_STOP);
+                            self.elevator.motor_direction(DIRN_STOP);
                             self.set_behaviour(ElevatorBehaviour::DoorOpen);
                             self.elevator.door_light(true);
                             self.start_door_timer(Duration::from_secs(3)); 
@@ -443,7 +443,7 @@ impl Slave {
                     recv(self.channels.stop_button_rx) -> msg => {
                         let stop_button = msg.unwrap();
                         println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
-                        self.elevator.motor_direction(e::DIRN_STOP);
+                        self.elevator.motor_direction(DIRN_STOP);
                         self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                         self.send_stop_button();
                     }
@@ -617,15 +617,15 @@ impl Slave {
 
         match diraction {
             Direction::Up   => {
-                self.elevator.motor_direction(e::DIRN_UP);
+                self.elevator.motor_direction(DIRN_UP);
                 self.state.direction = Direction::Up;
             },
             Direction::Down => {
-                self.elevator.motor_direction(e::DIRN_DOWN);
+                self.elevator.motor_direction(DIRN_DOWN);
                 self.state.direction = Direction::Down;
             },
             Direction::Stop => {
-                self.elevator.motor_direction(e::DIRN_STOP);
+                self.elevator.motor_direction(DIRN_STOP);
                 self.state.direction = Direction::Stop;
             },
         }
