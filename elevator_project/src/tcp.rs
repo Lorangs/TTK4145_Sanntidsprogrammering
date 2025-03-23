@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display as FmtDisplay, Result as FmtResult, Formatter as FmtFormatter};
 use crate::config::NUMBER_OF_FLOORS;
 use crate::slave::ElevatorState;
-use crate::master::MasterQueues;
+use crate::master::OrderRequests;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct CallButton {
@@ -22,7 +22,7 @@ pub enum Message {
     OrderComplete(CallButton),
     LightMatrix([[bool; 3]; NUMBER_OF_FLOORS]), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
     Error(ErrorState),
-    Backup(MasterQueues),
+    Backup(OrderRequests),
     StateUpdate(ElevatorState),
     Idle,
 }
@@ -48,7 +48,6 @@ pub enum ErrorState {
     EmergancyStop,
     DoorObstruction,
     Network,
-    NoMaster,
 }
 
 impl FmtDisplay for ErrorState {
@@ -58,7 +57,6 @@ impl FmtDisplay for ErrorState {
             ErrorState::EmergancyStop => write!(f, "Emergancy stop"),
             ErrorState::DoorObstruction => write!(f, "Door obstruction"),
             ErrorState::Network => write!(f, "Network error"),
-            ErrorState::NoMaster => write!(f, "No connected Master"),
         }
     }
 }

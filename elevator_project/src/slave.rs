@@ -232,13 +232,10 @@ impl Slave {
     }
 
     fn send_order_complete(&mut self) {
-
-        // remove order from local_orders list
-        // self.clear_at_current_floor(); 
         self.state.cab_requests[self.state.floor as usize]   = false;
         self.send_state_update();
-        
-         if self.nxt_order.call!=2{
+
+         if self.nxt_order.call != e::CAB{
             let message = tcp::Message::OrderComplete(self.nxt_order);
             
             if self.master_channels.is_none() {

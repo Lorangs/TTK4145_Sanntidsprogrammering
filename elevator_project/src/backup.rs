@@ -5,11 +5,11 @@ use std::thread::{sleep, spawn};
 use std::time::Duration;
 
 use crate::config::Config;
-use crate::master::MasterQueues;
+use crate::master::OrderRequests;
 use crate::tcp::{Message, ErrorState};
 
 pub struct Backup {
-    orders: MasterQueues,
+    orders: OrderRequests,
     master_to_backup_rx: cbc::Receiver<Message>,
 }
 
@@ -28,7 +28,7 @@ impl Backup {
                         let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded::<Message>();
 
                         let backup = Backup {
-                            orders: MasterQueues::init(),
+                            orders: OrderRequests::init(),
                             master_to_backup_rx: master_to_backup_rx,
                         };
 
@@ -50,7 +50,7 @@ impl Backup {
 
     // Updates backup orders and returns them if master disconnects
     // Ned to handle the case where the backup recieves a message but dont update the orders. May need to be handled in both backup and master.
-    pub fn backup_loop(&mut self) -> Result<MasterQueues, cbc::RecvError> {
+    pub fn backup_loop(&mut self) -> Result<OrderRequests, cbc::RecvError> {
         loop {
             match self.master_to_backup_rx.recv() {
                 Ok(message) => {
