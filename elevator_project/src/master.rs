@@ -394,13 +394,13 @@ impl Master {
                                         let slave_state = locked_requests.states[slave_number].clone();
                                         let nxt_order = self.get_next_order(slave_number, slave_state);
                                         match nxt_order {
-                                            Some(_) => {
-                                                let message = Message::NewOrder(nxt_order.unwrap());
+                                            Some(nxt_order) => {
+                                                let msg = Message::NewOrder(nxt_order);
                                                 locked_channels[slave_number].clone().unwrap()
                                                     .0
-                                                    .send(message)
+                                                    .send(msg)
                                                     .unwrap();
-                                                println!("[MASTER]\tNew order message sent to slave:{}, order {}", slave_number, nxt_order.unwrap());
+                                                println!("[MASTER]\tNew order message sent to slave:{}, order {}", slave_number, nxt_order);
                                             }
                                             None => {
                                                 println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
@@ -453,7 +453,7 @@ impl Master {
             .collect();
     
         for backup_ip in backup_ip_list {
-            match TcpStream::connect_timeout(&backup_ip, Duration::from_millis(self.config.tcp_timeout_ms)) {
+            match TcpStream::connect(&backup_ip) {
                 Ok(backup_socket) => {
                     // Create channel for backup connection
                     let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();

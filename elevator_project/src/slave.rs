@@ -165,10 +165,8 @@ impl Slave {
                 Ok(stream) => {
                     println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
                     self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
-                    //send status til master
-                    //self.send_state_update(); trur ikkje vi trenge ditta siden det blir gjort inne i set behavior og
+
                     //Stop the elevator, and let the master decide what to do 
-                    //ditta gjær at de blir et lite hakk, men e de innafor siden de e beire en at den kjøre utforbi
                     self.elevator.motor_direction(DIRN_STOP);
                     self.set_behaviour(ElevatorBehaviour::Idle);
                     return;
@@ -469,9 +467,10 @@ impl Slave {
                     // Receive incoming message from master
                     recv(self.master_channels.clone().unwrap().1) -> msg => {
                         let message = msg.unwrap();
+                        println!("[SLAVE]\t\tReceived message from master: {:#?}", message);
                         match message {
-                            
                             tcp::Message::NewOrder(callbutton) => {
+                                println!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
                                 if self.state.behaviour == ElevatorBehaviour::Idle { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
                                     self.nxt_order = callbutton.clone();
                                     //println!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
@@ -492,7 +491,7 @@ impl Slave {
                             },
                             tcp::Message::LightMatrix(matrix) => {
                                 self.light_matrix = matrix;
-                                //println!("[SLAVE]\t\tReceived light matrix");
+                                println!("[SLAVE]\t\tReceived light matrix");
                                 self.sync_lights_normal();
                             },
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.

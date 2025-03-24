@@ -117,7 +117,7 @@ pub fn spawn_thread_for_master_connection
                 Ok(size) => {
                     if size > 0 {
                         let msg: Message = bincode::deserialize::<Message>(&encoded).expect("Failed to deserialize message");
-                        println!("[SLAVE]\t\tReceived message from master: {:#?}", msg);
+                        //println!("[SLAVE]\t\tReceived message from master: {:#?}", msg);
                         master_to_slave_tx.send(msg).unwrap();
                     }
                 }
