@@ -264,19 +264,6 @@ impl Slave {
         }
     }
 
-    fn send_idle(&mut self) {
-        let message = tcp::Message::Idle;
-        if self.master_channels.is_none() {
-            println!("[SLAVE]\t\tNo master found. Cannot send order.");
-            return;
-        }
-
-        match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => {},
-            Err(e) => println!("[SLAVE]\t\tFailed to send idle: {}", e),
-        }
-    }
-
     // Choose direction based on next order and start moving. 
     fn start_moving_normal(&mut self) {
         if  self.state.behaviour == ElevatorBehaviour::DoorOpen || 
@@ -452,6 +439,15 @@ impl Slave {
                     recv(self.channels.obstruction_rx) -> msg => {
                         let obstr = msg.unwrap();
                         self.obstruction = obstr;
+                        match obstr {
+                            true => {
+                                self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                            },
+                            false => {
+                                self.set_behaviour(ElevatorBehaviour::Idle);
+                            }
+                        }
+                        self.send_state_update();
                         println!("[SLAVE]\t\tObstruction: {:#?}", obstr);
                     }
 
@@ -461,13 +457,12 @@ impl Slave {
                             //println!("Obstruction detected. Timer reset.");
                             self.start_door_timer(Duration::from_secs(3));
                             println!("[SLAVE]\t\tObstruction detected. Timer reset.");
-                            self.send_state_update(); //sånn at lysmatrisa blir oppdatert skjølv om heisen e stuck
+                            self.send_state_update(); //To update the light matrix even if the elevator is out of order
                         }
                         else {
                             println!("[SLAVE]\t\tTimer expired. Door closing.");
                             self.elevator.door_light(false);
                             self.set_behaviour(ElevatorBehaviour::Idle);
-                          //self.send_order_complete();
                         }
                     }
 
@@ -475,11 +470,12 @@ impl Slave {
                     recv(self.master_channels.clone().unwrap().1) -> msg => {
                         let message = msg.unwrap();
                         match message {
+                            
                             tcp::Message::NewOrder(callbutton) => {
                                 if self.state.behaviour == ElevatorBehaviour::Idle { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
                                     self.nxt_order = callbutton.clone();
                                     //println!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
-                                    println!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
+                                    println!("[SLAVE]\t\tfloor: {:#?}, next order: {:#?}", self.state.floor, self.nxt_order.floor);
                                     if self.state.floor == self.nxt_order.floor {
                                         self.set_behaviour(ElevatorBehaviour::DoorOpen);
                                         self.elevator.door_light(true);
@@ -530,7 +526,7 @@ impl Slave {
                     }
                     default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
-                            self.send_idle();
+                            self.send_state_update();
                         }
                     },
                 }// cbc::select

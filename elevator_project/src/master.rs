@@ -196,50 +196,50 @@ impl Master {
     Ok(master)
     }
 
-    fn get_next_order(&mut self, slave_number: usize, slave_state: ElevatorState) -> Option<CallButton> {
+    fn get_next_order(&self, slave_number: usize, slave_state: ElevatorState) -> Option<CallButton> {
         if slave_state.behaviour != ElevatorBehaviour::OutOfOrder {
             match slave_state.direction {
                 Direction::Down => {
                     for i in (0..slave_state.floor).rev() {
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                            return Some(CallButton { floor: i, call: HALL_DOWN });
                         }
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
+                            return Some(CallButton { floor: i, call: CAB });
                         }
                     }
                 }
                 Direction::Up => {
                     for i in slave_state.floor..NUMBER_OF_FLOORS as u8 {
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                            return Some(CallButton { floor: i, call: HALL_UP });
                         }
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
+                            return Some(CallButton { floor: i, call: CAB });
                         }
                     }
                 }
                 Direction::Stop => {
                     for i in slave_state.floor..NUMBER_OF_FLOORS as u8{
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                            return Some(CallButton { floor: i, call: HALL_UP });
                         }
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
+                            return Some(CallButton { floor: i, call: CAB });
                         }
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                            return Some(CallButton { floor: i, call: HALL_DOWN });
                         }
                     }// har 2 for loop sånn at den tar nermaste ordrane først, men blei litt masse kode
                     for i in (0..slave_state.floor).rev() {
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                            return Some(CallButton { floor: i, call: HALL_UP });
                         }
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
+                            return Some(CallButton { floor: i, call: CAB });
                         }
                         if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                            return Some(CallButton { floor: i, call: HALL_DOWN });
                         }
                     }
                 }
@@ -317,6 +317,7 @@ impl Master {
                 match locked_channels[slave_number].clone().unwrap().1.try_recv() {
                     Ok(message) => {
                         match message {
+
                             Message::NewOrder(call_button) => {
                                 let mut locked_requests = self.requests.lock().unwrap();
                                 locked_requests.update_hall_requests(call_button, true);
@@ -343,6 +344,7 @@ impl Master {
                                 }
                             }
 
+                            // Slave has completed an order. Remove order from requests queue
                             Message::OrderComplete(call_button) => {
                                 let mut locked_requests = self.requests.lock().unwrap();
                                 locked_requests.update_hall_requests(call_button,false);
@@ -368,25 +370,29 @@ impl Master {
                                 }
                             }
 
-
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
-
                                 let mut locked_requests = self.requests.lock().unwrap();
                                 locked_requests.states[slave_number] = new_state;
                                 
                                 match self.update_backup(locked_requests.clone()){
-                                    Ok(_) => {},
+                                    Ok(_)  => {},
                                     Err(_) => self.master_to_backup_tx = None,
                                 }
                                 
                                 println!("[MASTER]\tNew state update from slave:\t{}", new_state);
 
+                                let light_matrix = self.make_light_matrix(slave_number,locked_requests.clone());
+                                locked_channels[slave_number].clone().unwrap()
+                                    .0
+                                    .send(light_matrix)
+                                    .unwrap();
+
                                 match new_state.behaviour {
-                                    ElevatorBehaviour::Idle => {                               
-                                        let slave_state = self.requests.lock().unwrap().states[slave_number].clone();
+                                    ElevatorBehaviour::Idle => {                             
+                                        self.assigned_orders = locked_requests.assign_requests().unwrap();
+                                        let slave_state = locked_requests.states[slave_number].clone();
                                         let nxt_order = self.get_next_order(slave_number, slave_state);
-        
                                         match nxt_order {
                                             Some(_) => {
                                                 let message = Message::NewOrder(nxt_order.unwrap());
@@ -404,33 +410,10 @@ impl Master {
                                     // if the elevator is in the process of opening the door, do nothing.
                                     // if the door is open longer than the timeout, the slave will send a new state update
                                     // TODO! Kanskje dette burde være en egen meldingstype ??
-                                    ElevatorBehaviour::DoorOpen => {
+                                    ElevatorBehaviour::OutOfOrder => {
                                         
                                     },
                                     _ => {}, // Do nothing for other states
-                                }
-
-
-
-                                let light_matrix = self.make_light_matrix(slave_number,locked_requests.clone());
-                                locked_channels[slave_number].clone().unwrap()
-                                    .0
-                                    .send(light_matrix)
-                                    .unwrap();
-
-                                let nxt_order = locked_requests.get_next_order(slave_number);
-                                match nxt_order {
-                                    Some(_) => {
-                                        let message = Message::NewOrder(nxt_order.unwrap());
-                                        locked_channels[slave_number].clone().unwrap()
-                                            .0
-                                            .send(message)
-                                            .unwrap();
-                                        println!("[MASTER]\tNew order message sent to slave:{}, order{}", slave_number, nxt_order.unwrap());
-                                    }
-                                    None => {
-                                        println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
-                                    }
                                 }
                             }
 
@@ -455,12 +438,9 @@ impl Master {
 
                         }
                     }
-                    Err(_) => {}
+                    Err(_) => {} // No message from slave
                 }
             }
-
-            //Add a very small sleep to avoid consuming 100% CPU
-            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
     
