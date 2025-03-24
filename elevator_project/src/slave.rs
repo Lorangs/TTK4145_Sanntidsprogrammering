@@ -448,7 +448,7 @@ impl Slave {
                         self.send_stop_button();
                     }
 
-                    // Receive obstruction from elevator
+                    // Receive obstruction from elevator. If obstruction is detected, send a message to master to reassign hall orders.
                     recv(self.channels.obstruction_rx) -> msg => {
                         let obstr = msg.unwrap();
                         self.obstruction = obstr;

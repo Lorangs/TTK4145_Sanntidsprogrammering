@@ -52,81 +52,11 @@ impl OrderRequests {
         }
     }
 
-    pub fn get_next_order(&mut self, slave_number: usize) -> Option<CallButton> {
-        // run the optimization algorithm
-        // return the next order for the slaves
-        let orders: HashMap<String, Vec<[bool; 3]>>;
+    // run the optimization algorithm
+    pub fn assign_requests(&mut self) -> Result<HashMap<String, Vec<[bool; 3]>>, &str> {
 
-        let input = self.to_custom_json();
-
-
-        let output = Command::new("../hall_request_assigner")
-            .args(["--includeCab", "--input"])
-            .arg(input)
-            .output()
-            .expect("Failed to start hall_request_assigner");
-        
-        
-        if output.status.success() {
-            orders = serde_json::from_slice(&output.stdout).unwrap();
-        } 
-        else { return None; }
-        
-        let elevator= self.states[slave_number].clone();
-        if elevator.behaviour != ElevatorBehaviour::OutOfOrder {
-            match elevator.direction {
-                Direction::Down => {
-                    for i in (0..elevator.floor).rev() {
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                    }
-                }
-                Direction::Up => {
-                    for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                    }
-                }
-                Direction::Stop => {
-                    for i in elevator.floor..NUMBER_OF_FLOORS as u8{
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
-                    }// har 2 for loop sånn at den tar nermaste ordrane først, men blei litt masse kode
-                    for i in (0..elevator.floor).rev() {
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
-                    }
-                }
-            }
-        }
-        return None; 
-    }
-    
-    fn to_custom_json(&self) -> String {
-        use serde_json::{json, Value, Map};
         // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
+        use serde_json::{json, Value, Map};
         let hall_requests: Vec<Value> = self.hallRequests
             .iter()
             .map(|x| json!([x[0], x[1]]))
@@ -149,10 +79,25 @@ impl OrderRequests {
             "hallRequests": hall_requests,
             "states": states,
         }); 
-        serde_json::to_string(&result).unwrap()
-    }
-}
 
+        // final input to the hall_request_assigner
+        let input = serde_json::to_string(&result).unwrap();
+        
+        // run the hall_request_assigner program
+        let output = Command::new("../hall_request_assigner")
+        .args(["--includeCab", "--input"])
+        .arg(input)
+        .output()
+        .expect("Failed to start hall_request_assigner");
+    
+        // parse the output from the hall_request_assigner into a hashmap
+        if output.status.success() {
+            let result: HashMap<String, Vec<[bool; 3]>> = serde_json::from_slice(&output.stdout).unwrap();
+            return Ok(result);
+        } 
+        return Err("Failed to run hall_request_assigner"); 
+    }  
+}
 
 impl FmtDisplay for OrderRequests {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
@@ -169,6 +114,7 @@ impl FmtDisplay for OrderRequests {
 pub struct Master {
     pub config                      : Config,                                                                     
     pub requests                    : Arc<Mutex<OrderRequests>>,                                          // Vector of slaves order queues
+    assigned_orders                 : HashMap<String, Vec<[bool; 3]>>,                                    // HashMap of assigned orders for each slave
     slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS ]>>,   // Vector of slave channels.
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
     backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
@@ -184,7 +130,8 @@ impl Master {
         let mut master = Master {
             config                  : config.clone(),
             requests                : Arc::new(Mutex::new(order_requests)),
-            slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),            // spørsmål???
+            assigned_orders         : HashMap::new(),
+            slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),           
             master_to_backup_tx     : None,
             backup_disconected_rx   : cbc::unbounded().1,
         };
@@ -247,6 +194,58 @@ impl Master {
         }
     });
     Ok(master)
+    }
+
+    fn get_next_order(&mut self, slave_number: usize, slave_state: ElevatorState) -> Option<CallButton> {
+        if slave_state.behaviour != ElevatorBehaviour::OutOfOrder {
+            match slave_state.direction {
+                Direction::Down => {
+                    for i in (0..slave_state.floor).rev() {
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
+                    }
+                }
+                Direction::Up => {
+                    for i in slave_state.floor..NUMBER_OF_FLOORS as u8 {
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
+                    }
+                }
+                Direction::Stop => {
+                    for i in slave_state.floor..NUMBER_OF_FLOORS as u8{
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
+                    }// har 2 for loop sånn at den tar nermaste ordrane først, men blei litt masse kode
+                    for i in (0..slave_state.floor).rev() {
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
+                            return Some(CallButton { floor: i as u8, call: HALL_UP });
+                        }
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
+                            return Some(CallButton { floor: i as u8, call: CAB });
+                        }
+                        if self.assigned_orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
+                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
+                        }
+                    }
+                }
+            }
+        }
+        return None; 
     }
 
     // Returns a 3 x num_floors matrix for updating panel lights. 
@@ -321,13 +320,15 @@ impl Master {
                             Message::NewOrder(call_button) => {
                                 let mut locked_requests = self.requests.lock().unwrap();
                                 locked_requests.update_hall_requests(call_button, true);
-               
-                                println!("[MASTER]\tAdded order to hall queue: {}",call_button);
 
                                 match self.update_backup(locked_requests.clone()){
                                     Ok(_) => {},
                                     Err(_) => self.master_to_backup_tx = None,
                                 }
+
+                                // Update assigned_orders according to the new requests
+                                self.assigned_orders = locked_requests.assign_requests().unwrap();
+                                println!("[MASTER]\tAdded order to hall queue: {}",call_button);
 
                                 for i in 0..NUMBER_OF_ELEVATORS {
                                     if locked_channels[i].is_none() {
@@ -351,6 +352,10 @@ impl Master {
                                     Err(_) => self.master_to_backup_tx = None,
                                 }
 
+                                // Update assigned_orders according to current requests
+                                self.assigned_orders = locked_requests.assign_requests().unwrap();
+                                println!("[MASTER]\tRemoved order from hall queue: {}",call_button);
+
                                 for i in 0..NUMBER_OF_ELEVATORS {
                                     if locked_channels[i].is_some() {
                                         let light_matrix = self.make_light_matrix(i, locked_requests.clone());
@@ -363,40 +368,56 @@ impl Master {
                                 }
                             }
 
-                            Message::Idle => {
-                                let mut locked_requests = self.requests.lock().unwrap();
-                                let nxt_order = locked_requests.get_next_order(slave_number);
-                                match nxt_order {
-                                    Some(_) => {
-                                        let message = Message::NewOrder(nxt_order.unwrap());
-                                        locked_channels[slave_number].clone().unwrap()
-                                            .0
-                                            .send(message)
-                                            .unwrap();
-                                        println!("[MASTER]\tNew order message sent to slave:{}, order {}", slave_number, nxt_order.unwrap());
-                                    }
-                                    None => {
-                                        println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
-                                    }
-                                }
-                            }// idle og state update gjer basacly akkuratt de samme bruke en fungsjon kansje?
 
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
+
                                 let mut locked_requests = self.requests.lock().unwrap();
                                 locked_requests.states[slave_number] = new_state;
-
+                                
                                 match self.update_backup(locked_requests.clone()){
                                     Ok(_) => {},
                                     Err(_) => self.master_to_backup_tx = None,
                                 }
+                                
                                 println!("[MASTER]\tNew state update from slave:\t{}", new_state);
+
+                                match new_state.behaviour {
+                                    ElevatorBehaviour::Idle => {                               
+                                        let slave_state = self.requests.lock().unwrap().states[slave_number].clone();
+                                        let nxt_order = self.get_next_order(slave_number, slave_state);
+        
+                                        match nxt_order {
+                                            Some(_) => {
+                                                let message = Message::NewOrder(nxt_order.unwrap());
+                                                locked_channels[slave_number].clone().unwrap()
+                                                    .0
+                                                    .send(message)
+                                                    .unwrap();
+                                                println!("[MASTER]\tNew order message sent to slave:{}, order {}", slave_number, nxt_order.unwrap());
+                                            }
+                                            None => {
+                                                println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
+                                            }
+                                        }
+                                    },
+                                    // if the elevator is in the process of opening the door, do nothing.
+                                    // if the door is open longer than the timeout, the slave will send a new state update
+                                    // TODO! Kanskje dette burde være en egen meldingstype ??
+                                    ElevatorBehaviour::DoorOpen => {
+                                        
+                                    },
+                                    _ => {}, // Do nothing for other states
+                                }
+
+
 
                                 let light_matrix = self.make_light_matrix(slave_number,locked_requests.clone());
                                 locked_channels[slave_number].clone().unwrap()
                                     .0
                                     .send(light_matrix)
                                     .unwrap();
+
                                 let nxt_order = locked_requests.get_next_order(slave_number);
                                 match nxt_order {
                                     Some(_) => {
