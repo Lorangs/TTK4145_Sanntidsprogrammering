@@ -1,12 +1,14 @@
 {
     "elevator_ip_list": [
         "10.100.23.14",
-        "10.100.23.15"
+        "10.100.23.15",
+        "10.100.23.13"
     ],
     "master_port"           : 4000,
     "backup_port"           : 8081,
     "slave_port"            : 15657,
-    "door_open_duration_s"  : 3.0,
+    "door_open_duration_s"  : 3,
     "input_poll_rate_ms"    : 25,
-    "tcp_timeout_ms"        : 1000
+    "tcp_timeout_ms"        : 1000,
+    "est_moving_time_s"     : 4 
 }

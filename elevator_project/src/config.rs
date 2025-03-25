@@ -1,3 +1,4 @@
+
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -9,7 +10,7 @@ use std::result::Result;
 // constants variables for the elevator system
 // Struggled to put these in the config file due to compile time errors
 pub const NUMBER_OF_FLOORS      : usize = 4;
-pub const NUMBER_OF_ELEVATORS   : usize = 2;
+pub const NUMBER_OF_ELEVATORS   : usize = 3;
 
 // Custom serde module for Vec<Ipv4Addr> serialization/deserialization
 mod ipv4_address_vec {
@@ -67,12 +68,13 @@ mod ipv4_address_vec {
 pub struct Config {
     #[serde(with = "ipv4_address_vec")]
     pub elevator_ip_list: [Ipv4Addr; NUMBER_OF_ELEVATORS],
-    pub master_port: u16,
-    pub backup_port: u16,
-    pub slave_port: u16,
-    pub door_open_duration_s: f32,
-    pub input_poll_rate_ms: u64,
-    pub tcp_timeout_ms: u64,
+    pub master_port             : u16,
+    pub backup_port             : u16,
+    pub slave_port              : u16,
+    pub door_open_duration_s    : u64,
+    pub input_poll_rate_ms      : u64,
+    pub tcp_timeout_ms          : u64,
+    pub est_moving_time_s       : u64 
 }
 
 impl Display for Config {
@@ -85,14 +87,16 @@ impl Display for Config {
             Slave port:\t\t\t{}\n\
             Door open duration [s]:\t\t{}\n\
             Input poll rate [ms]:\t\t{}\n\
-            TCP timeout [ms]:\t\t{}",
+            TCP timeout [ms]:\t\t{}
+            Estimated moving time [s]:\t{}",
             self.elevator_ip_list,
             self.master_port,
             self.backup_port,
             self.slave_port,
             self.door_open_duration_s,
             self.input_poll_rate_ms,
-            self.tcp_timeout_ms
+            self.tcp_timeout_ms,
+            self.est_moving_time_s
         )
     }
 }

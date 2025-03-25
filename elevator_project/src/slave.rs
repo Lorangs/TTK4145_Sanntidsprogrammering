@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
 use std::thread::{sleep, spawn};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use crate::config::{Config, NUMBER_OF_FLOORS};
 use crate::inputs;
 use crate::tcp;
@@ -93,6 +93,8 @@ pub struct Slave {
     channels        : inputs::SlaveChannels,
     master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
     door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    motor_timeout   : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    timestamp_prev_floor: Instant,
     light_matrix    : [[bool; 3]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN, CAB_CALL for each floor
 }
 
@@ -116,6 +118,8 @@ impl Slave {
             channels            : chs,
             master_channels     : None,
             door_timer          : cbc::unbounded::<bool>(),
+            motor_timeout       : cbc::unbounded::<bool>(),
+            timestamp_prev_floor: Instant::now(),
             light_matrix        : [[false; 3]; NUMBER_OF_FLOORS],
         };
         
@@ -192,14 +196,6 @@ impl Slave {
         }
     }
 
-    // Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel when done. 
-    fn start_door_timer(&self, duration: Duration) {
-        let tx = self.door_timer.0.clone();
-        spawn(move || {
-            sleep(duration);
-            let _ = tx.send(true).unwrap();
-        });
-    }
 
     fn send_new_order(&mut self, callbutton: tcp::CallButton) {
         let message = tcp::Message::NewOrder(callbutton.clone());
@@ -263,6 +259,7 @@ impl Slave {
             Err(e) => println!("[SLAVE]\t\tFailed to send stop button: {}", e),
         }
     }
+
 
     // Choose direction based on next order and start moving. 
     fn start_moving_normal(&mut self) {
@@ -359,7 +356,7 @@ impl Slave {
                                     self.sync_lights_local();
                                     self.elevator.motor_direction(DIRN_STOP);
             
-                                    self.start_door_timer(Duration::from_secs(3));    // starting doortimer
+                                    start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);    // starting doortimer
                                 }
                             },
                             _ => {},
@@ -385,7 +382,7 @@ impl Slave {
                     recv(self.door_timer.1) -> _msg => {
                         if self.obstruction {
                             //println!("Obstruction detected. Timer reset.");
-                            self.start_door_timer(Duration::from_secs(3));
+                            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
                         }
                         else {
                             println!("[SLAVE]\t\tTimer expired. Door closing.");
@@ -407,13 +404,19 @@ impl Slave {
                         let floor_sensor = msg.unwrap();
                         self.state.floor = floor_sensor;
                         self.send_state_update(); // jobba med å få til å ta ordre på veien so la til dinna, men går ikkje endå
+
+                        self.timestamp_prev_floor = std::time::Instant::now();
+                        start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
+                        println!("[SLAVE]\t\tStarted motortimeout timer");
+                        
+
                         self.elevator.floor_indicator(self.state.floor);
                         if self.state.floor == self.nxt_order.floor{
                             self.state.direction = Direction::Stop;
                             self.elevator.motor_direction(DIRN_STOP);
                             self.set_behaviour(ElevatorBehaviour::DoorOpen);
                             self.elevator.door_light(true);
-                            self.start_door_timer(Duration::from_secs(3)); 
+                            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s); 
                             self.send_order_complete();
                         }
                     }
@@ -446,7 +449,7 @@ impl Slave {
                     recv(self.door_timer.1) -> _msg => {
                         if self.obstruction {
                             //println!("Obstruction detected. Timer reset.");
-                            self.start_door_timer(Duration::from_secs(3));
+                            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
                             println!("[SLAVE]\t\tObstruction detected. Timer reset.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_state_update(); //sånn at lysmatrisa blir oppdatert skjølv om heisen e stuck
@@ -456,6 +459,18 @@ impl Slave {
                             self.elevator.door_light(false);
                             self.set_behaviour(ElevatorBehaviour::Idle);
                           //self.send_order_complete();
+                        }
+                    }
+
+                    // Receive motor timeout if the elevator has not reached a floor within the estimated moving time
+                    recv(self.motor_timeout.1) -> _msg => {
+                        println!("[SLAVE]\t\tMotor timeout check.");
+                        if      (self.timestamp_prev_floor + Duration::from_secs(self.config.est_moving_time_s)) < std::time::Instant::now()
+                            &&  self.state.behaviour == ElevatorBehaviour::Moving 
+                        { 
+                            println!("[SLAVE]\t\tMotor timeout. Stopping elevator.");
+                            self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                            self.send_state_update();
                         }
                     }
 
@@ -471,7 +486,7 @@ impl Slave {
                                     if self.state.floor == self.nxt_order.floor {
                                         self.set_behaviour(ElevatorBehaviour::DoorOpen);
                                         self.elevator.door_light(true);
-                                        self.start_door_timer(Duration::from_secs(3));
+                                        start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
                                         self.send_order_complete();
                                     }
                                     else {
@@ -605,7 +620,7 @@ impl Slave {
             self.clear_at_current_floor(); //den opna ikkje døra når den fikk order i samme etasje so de va, so la til 2 linje som fiksa det
             self.sync_lights_local();
             self.elevator.door_light(true);
-            self.start_door_timer(Duration::from_secs(3));
+            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
         }
 
         match diraction {
@@ -652,4 +667,13 @@ impl Display for Slave {
             self.door_timer
         )
     }
+}
+
+
+// Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel when done. 
+fn start_timer(tx: cbc::Sender<bool>, duration: u64) {
+    spawn(move || {
+        sleep(Duration::from_secs(duration));
+        let _ = tx.send(true).unwrap();
+    });
 }
