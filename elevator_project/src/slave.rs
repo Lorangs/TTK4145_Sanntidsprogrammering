@@ -270,6 +270,8 @@ impl Slave {
             return;
         }
 
+        start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
+        self.timestamp_prev_floor = Instant::now();
         if self.state.floor > self.nxt_order.floor {
             self.state.direction = Direction::Down;
             self.set_behaviour(ElevatorBehaviour::Moving);
@@ -468,7 +470,7 @@ impl Slave {
                         if      (self.timestamp_prev_floor + Duration::from_secs(self.config.est_moving_time_s)) < std::time::Instant::now()
                             &&  self.state.behaviour == ElevatorBehaviour::Moving 
                         { 
-                            println!("[SLAVE]\t\tMotor timeout. Stopping elevator.");
+                            println!("[SLAVE]\t\tMotor timeout. Out of order.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_state_update();
                         }
@@ -491,6 +493,7 @@ impl Slave {
                                     }
                                     else {
                                         self.start_moving_normal();
+
                                     }
                                 }
                                 else {
