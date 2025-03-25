@@ -363,24 +363,6 @@ impl Master {
                                 }
                             }
 
-                            Message::Idle => {
-                                let mut locked_requests = self.requests.lock().unwrap();
-                                let nxt_order = locked_requests.get_next_order(slave_number);
-                                match nxt_order {
-                                    Some(_) => {
-                                        let message = Message::NewOrder(nxt_order.unwrap());
-                                        locked_channels[slave_number].clone().unwrap()
-                                            .0
-                                            .send(message)
-                                            .unwrap();
-                                        println!("[MASTER]\tNew order message sent to slave:{}, order {}", slave_number, nxt_order.unwrap());
-                                    }
-                                    None => {
-                                        println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
-                                    }
-                                }
-                            }// idle og state update gjer basacly akkuratt de samme bruke en fungsjon kansje?
-
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
                                 let mut locked_requests = self.requests.lock().unwrap();

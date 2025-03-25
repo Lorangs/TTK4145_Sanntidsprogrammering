@@ -264,18 +264,6 @@ impl Slave {
         }
     }
 
-    fn send_idle(&mut self) {
-        let message = tcp::Message::Idle;
-        if self.master_channels.is_none() {
-            println!("[SLAVE]\t\tNo master found. Cannot send order.");
-            return;
-        }
-
-        match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => {},
-            Err(e) => println!("[SLAVE]\t\tFailed to send idle: {}", e),
-        }
-    }
 
     // Choose direction based on next order and start moving. 
     fn start_moving_normal(&mut self) {
@@ -461,6 +449,7 @@ impl Slave {
                             //println!("Obstruction detected. Timer reset.");
                             self.start_door_timer(Duration::from_secs(3));
                             println!("[SLAVE]\t\tObstruction detected. Timer reset.");
+                            self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_state_update(); //sånn at lysmatrisa blir oppdatert skjølv om heisen e stuck
                         }
                         else {
@@ -530,7 +519,7 @@ impl Slave {
                     }
                     default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
-                            self.send_idle();
+                            self.send_state_update();
                         }
                     },
                 }// cbc::select
