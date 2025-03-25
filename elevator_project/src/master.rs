@@ -1,5 +1,3 @@
-
-
 use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
@@ -393,16 +391,30 @@ impl Master {
                             }
 
                             // Removes an disconected slave
-                            Message::Error(_e) => {
-                                locked_channels[slave_number] = None;
-                                self.requests.lock().unwrap().states[slave_number].behaviour = ElevatorBehaviour::OutOfOrder;
+                            Message::Error(e) => {
+                                match e {
+                                    tcp::ErrorState::Network => {
+                                        self.requests.lock().unwrap().states[slave_number].behaviour = ElevatorBehaviour::OutOfOrder;
 
-                                match self.update_backup(self.requests.lock().unwrap().clone()){
-                                    Ok(_) => {},
-                                    Err(_) => self.master_to_backup_tx = None,
+                                        match self.update_backup(self.requests.lock().unwrap().clone()){
+                                            Ok(_) => {},
+                                            Err(_) => self.master_to_backup_tx = None,
+                                        }
+                                        
+                                        println!("[MASTER]\tSlave {} disconnected", slave_number);
+                                        locked_channels[slave_number] = None;
+                                    },
+                                    tcp::ErrorState::EmergancyStop => {
+                                        println!("[MASTER]\tSlave {} has emergancy stop", slave_number);
+                                        self.requests.lock().unwrap().states[slave_number].behaviour = ElevatorBehaviour::OutOfOrder;
+
+                                        match self.update_backup(self.requests.lock().unwrap().clone()){
+                                            Ok(_) => {},
+                                            Err(_) => self.master_to_backup_tx = None,
+                                        }
+                                    },
                                 }
-                                
-                                println!("[MASTER]\tSlave {} disconnected", slave_number);
+
                             }
                             _ => {
                                 println!(
@@ -468,13 +480,12 @@ fn handle_slave_connection(
                 if size > 0 {
                     let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
                         .expect("[MASTER]\tFailed to deserialize message from slave");
-                    //println!("[MASTER]\tReceived message from slave: {:#?}", recieved);
                     slave_to_master_tx.send(msg).unwrap();
                 }
             }
             Err(e) => {
                 match e.kind() {
-                    std::io::ErrorKind::WouldBlock => { /* println!("[SLAVE]\t\tNo data available"); */ }
+                    std::io::ErrorKind::WouldBlock => {  }
                     _ => {
                         println!("[SLAVE]\t\tFailed to read from stream: {}", e);
                         slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
@@ -578,5 +589,3 @@ pub fn master_read_from_clients(
     });
     rx
 }
-
-

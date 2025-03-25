@@ -42,18 +42,15 @@ impl FmtDisplay for Message {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ErrorState {
-    OK,
+    
     EmergancyStop,
-    DoorObstruction,
     Network,
 }
 
 impl FmtDisplay for ErrorState {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
-            ErrorState::OK => write!(f, "OK"),
             ErrorState::EmergancyStop => write!(f, "Emergancy stop"),
-            ErrorState::DoorObstruction => write!(f, "Door obstruction"),
             ErrorState::Network => write!(f, "Network error"),
         }
     }

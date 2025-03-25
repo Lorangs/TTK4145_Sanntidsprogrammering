@@ -89,6 +89,7 @@ pub struct Slave {
     pub elevator    : e::Elevator,
     pub state       : ElevatorState,
     obstruction     : bool,
+    stop_button     : bool,
     nxt_order       : tcp::CallButton,
     channels        : inputs::SlaveChannels,
     master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
@@ -115,6 +116,7 @@ impl Slave {
             nxt_order           : tcp::CallButton { floor: 0, call: 0 },
             state               : ElevatorState::init(),
             obstruction         : false,
+            stop_button         : false,
             channels            : chs,
             master_channels     : None,
             door_timer          : cbc::unbounded::<bool>(),
@@ -184,7 +186,7 @@ impl Slave {
 
     // Poll light information from dirver and update light_matrix
     fn sync_lights_normal(&self) {
-        println!("Syncing lights");
+        println!("[SLAVE]\t\tSyncing lights");
         for (floor_index, light_array) in self.light_matrix.iter().enumerate() {
             let floor = floor_index as u8;
             self.elevator
@@ -246,6 +248,7 @@ impl Slave {
         }
     }
 
+    /// Send emergancy stop message to master
     fn send_stop_button(&mut self) {
         let message = tcp::Message::Error(tcp::ErrorState::EmergancyStop);
 
@@ -261,17 +264,17 @@ impl Slave {
     }
 
 
-    // Choose direction based on next order and start moving. 
+    /// Choose direction based on next order from master and start moving. 
     fn start_moving_normal(&mut self) {
         if  self.state.behaviour == ElevatorBehaviour::DoorOpen || 
             self.state.behaviour == ElevatorBehaviour::OutOfOrder
-        {
-            // Do nothing if the elevator is out of order or the door is open
-            return;
+        {  
+            return; // Do nothing if the elevator is out of order or the door is open
         }
 
         start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
         self.timestamp_prev_floor = Instant::now();
+
         if self.state.floor > self.nxt_order.floor {
             self.state.direction = Direction::Down;
             self.set_behaviour(ElevatorBehaviour::Moving);
@@ -286,7 +289,7 @@ impl Slave {
         }
     }
 
-
+    /// Send the current state of the elevator to master
     pub fn send_state_update(&mut self) {
         let message = tcp::Message::StateUpdate(self.state.clone());
         if self.master_channels.is_none() {
@@ -301,7 +304,7 @@ impl Slave {
 
     }
 
-
+    /// Set the behaviour of the elevator. If the behaviour is changed, send a state update to the master.
     fn set_behaviour(&mut self, new_behaviour: ElevatorBehaviour) {
         if new_behaviour != self.state.behaviour {
             if new_behaviour != ElevatorBehaviour::OutOfOrder {
@@ -313,7 +316,7 @@ impl Slave {
     }
 
 
-    // State machine for the slave elevator
+    /// State machine for the slave elevator
     pub fn slave_loop(&mut self) {
         loop {
 
@@ -352,11 +355,16 @@ impl Slave {
 
                     // Receive stop button from elevator
                     recv(self.channels.stop_button_rx) -> msg => {
-                        let stop_button = msg.unwrap();
-                        println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
-                        self.elevator.motor_direction(DIRN_STOP);
-                        self.set_behaviour(ElevatorBehaviour::OutOfOrder);
-                        self.send_stop_button();
+                        self.stop_button = msg.unwrap();
+                        println!("[SLAVE]\t\tStop button: {:#?}", self.stop_button);
+                        if self.stop_button {
+                            self.elevator.motor_direction(DIRN_STOP);
+                            self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                            self.send_stop_button();
+                        } 
+                        else {
+                            self.set_behaviour(ElevatorBehaviour::Idle);
+                        }
                     }
 
                     // Receive obstruction from elevator
@@ -385,9 +393,9 @@ impl Slave {
 
                     // Receive motor timeout if the elevator has not reached a floor within the estimated moving time
                     recv(self.motor_timeout.1) -> _msg => {
-                        println!("[SLAVE]\t\tMotor timeout check.");
-                        if      (self.timestamp_prev_floor + Duration::from_secs(self.config.est_moving_time_s)) < std::time::Instant::now()
+                        if      self.timestamp_prev_floor + Duration::from_secs(self.config.est_moving_time_s) < std::time::Instant::now()
                             &&  self.state.behaviour == ElevatorBehaviour::Moving 
+                            &&  !self.stop_button
                         { 
                             println!("[SLAVE]\t\tMotor timeout. Out of order.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
@@ -453,7 +461,7 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms*10)) => {
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
                             self.send_state_update();
                         }
@@ -465,7 +473,6 @@ impl Slave {
 
             /************** local operation mode ***************/
             else {
-
                 cbc::select! {
                     // Receive call button message from elevator
                     recv(self.channels.call_button_rx) -> msg => {
@@ -514,10 +521,15 @@ impl Slave {
             
                     // Receive stop button message from elevator
                     recv(self.channels.stop_button_rx) -> msg => {
-                        let stop_button = msg.unwrap();
-                        println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
-                        self.elevator.motor_direction(DIRN_STOP);
-                        self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                        self.stop_button = msg.unwrap();
+                        println!("[SLAVE]\t\tStop button: {:#?}", self.stop_button);
+                        if self.stop_button {
+                            self.elevator.motor_direction(DIRN_STOP);
+                            self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                        } 
+                        else {
+                            self.set_behaviour(ElevatorBehaviour::Idle);
+                        }
                     }
             
                     recv(self.channels.obstruction_rx) -> msg => {
@@ -545,10 +557,8 @@ impl Slave {
         } // loop
     }// slave_loop
 
-    
 
     /************ functions for local operation mode **************/
-
     fn orders_above(&mut self) -> bool{
         for floor in (self.state.floor + 1) .. NUMBER_OF_FLOORS as u8 {
             if self.state.cab_requests[floor as usize] {
