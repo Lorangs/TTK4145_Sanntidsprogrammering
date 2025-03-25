@@ -126,7 +126,7 @@ impl OrderRequests {
     
     fn to_custom_json(&self) -> String {
         use serde_json::{json, Value, Map};
-        // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
+        // Konverter hall_requests til json
         let hall_requests: Vec<Value> = self.hallRequests
             .iter()
             .map(|x| json!([x[0], x[1]]))
@@ -169,7 +169,7 @@ impl FmtDisplay for OrderRequests {
 pub struct Master {
     pub config                      : Config,                                                                     
     pub requests                    : Arc<Mutex<OrderRequests>>,                                          // Vector of slaves order queues
-    slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS ]>>,   // Vector of slave channels.
+    slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS ]>>,   // Vector of slave channels. William - Denne trenger ikke å være en Arc<Mutex<>>, så vidt jeg kan skjønne...
     master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
     backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
 }

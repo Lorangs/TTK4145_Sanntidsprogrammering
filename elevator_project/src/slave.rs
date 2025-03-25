@@ -25,6 +25,7 @@ pub enum ElevatorBehaviour {
     DoorOpen,
     OutOfOrder,
 }
+
 impl ElevatorBehaviour{
     pub fn to_ascii_lowercase(self) -> &'static str{
         match self {
@@ -42,6 +43,7 @@ pub enum Direction {
     Stop = 0,
     Up = 1,
 }
+
 impl Direction {
     pub fn to_ascii_lowercase(self) -> &'static str{
         match self {
@@ -59,6 +61,7 @@ pub struct ElevatorState {
     pub direction           : Direction,
     pub cab_requests        : [bool; NUMBER_OF_FLOORS],
 }
+
 impl ElevatorState{
     pub fn init() -> ElevatorState {
         ElevatorState {
@@ -83,6 +86,10 @@ impl Display for ElevatorState {
     }
 }
 
+
+
+//********************************************************SLAVE************************************************************//
+
 #[derive(Debug)]
 pub struct Slave {
     pub config      : Config,
@@ -95,6 +102,29 @@ pub struct Slave {
     door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
     light_matrix    : [[bool; 3]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN, CAB_CALL for each floor
 }
+
+impl Display for Slave {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(
+            f,
+            "\tElevator:\t{:#?}\n\
+            \tState:\t{:#?}\n\
+            \tNxt_order:\t{:#?}\n\
+            \tObstruction:\t{:#?}\n\
+            \tChannels:\t{:#?}\n\
+            \tMaster_socket:\t{:#?}\n\
+            \tDoor_timer:\t{:#?}",
+            self.elevator,
+            self.state,
+            self.nxt_order,
+            self.obstruction,
+            self.channels,
+            self.master_channels,
+            self.door_timer
+        )
+    }
+}
+
 
 impl Slave {
     pub fn init(slave_addr: String, config: &Config) -> Slave {
@@ -130,31 +160,35 @@ impl Slave {
         loop {
             cbc::select! {
                 recv(slave.channels.floor_sensor_rx) -> msg => {
-                    let floor_sensor = msg.unwrap();
-                    println!("Received floor sensor message: {:#?}", floor_sensor);
-                    slave.state.floor = floor_sensor;
-                    if slave.state.floor !=u8::MAX{
-                        slave.elevator.motor_direction(DIRN_STOP);
-                        slave.state.direction = Direction::Stop;
-                        slave.state.behaviour = ElevatorBehaviour::Idle;
-                        slave.elevator.floor_indicator(slave.state.floor as u8);
-                        break;
+                    match msg {
+                        Ok(floor_sensor) => {
+                            slave.state.floor = floor_sensor;
+                            if slave.state.floor != u8::MAX {
+                                slave.elevator.motor_direction(DIRN_STOP);
+                                slave.state.direction = Direction::Stop;
+                                slave.state.behaviour = ElevatorBehaviour::Idle;
+                                slave.elevator.floor_indicator(slave.state.floor as u8);
+                                break;
+                            }
+                        },
+                        Err(e) => println!("[SLAVE]\t\tFailed to receive floor sensor message. Check elevator hardware {}", e),
+                    }
                     }
                 }
             }
+            slave.try_connect_to_new_master();
+    
+            if slave.master_channels.is_none() {
+                println!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
+            }
+            else{
+                println!("[SLAVE]\t\tConnected to master. Starting in normal operation mode.");
+                slave.send_state_update();
+            }
+            return slave;
         }
 
-        slave.try_connect_to_new_master();
 
-        if slave.master_channels.is_none() {
-            println!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
-        }
-        else{
-            println!("[SLAVE]\t\tConnected to master. Starting in normal operation mode.");
-            slave.send_state_update();
-        }
-        return slave;
-    }
 
   
     fn try_connect_to_new_master(&mut self) {
@@ -164,7 +198,7 @@ impl Slave {
             match TcpStream::connect(socket_addr) {
                 Ok(stream) => {
                     println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
-                    self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
+                    self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms)); //May need to handle error form spawn_thread_for_master_connection. May spawn the thred in master insted of in func. 
                     //send status til master
                     //self.send_state_update(); trur ikkje vi trenge ditta siden det blir gjort inne i set behavior og
                     //Stop the elevator, and let the master decide what to do 
@@ -197,7 +231,10 @@ impl Slave {
         let tx = self.door_timer.0.clone();
         spawn(move || {
             sleep(duration);
-            let _ = tx.send(true).unwrap();
+            match tx.send(true) {
+                Ok(_) => {},
+                Err(e) => println!("[SLAVE]\t\tFailed to send door timer message: {}", e),
+            }
         });
     }
 
@@ -542,7 +579,7 @@ impl Slave {
 
     /************ functions for local operation mode **************/
 
-    fn orders_above(&mut self) -> bool{
+    fn orders_above(&mut self) -> bool {
         for floor in (self.state.floor + 1) .. NUMBER_OF_FLOORS as u8 {
             if self.state.cab_requests[floor as usize] {
                 self.nxt_order = tcp::CallButton { floor: floor, call: CAB};
@@ -644,24 +681,3 @@ impl Slave {
     }
 }
 
-impl Display for Slave {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "\tElevator:\t{:#?}\n\
-            \tState:\t{:#?}\n\
-            \tNxt_order:\t{:#?}\n\
-            \tObstruction:\t{:#?}\n\
-            \tChannels:\t{:#?}\n\
-            \tMaster_socket:\t{:#?}\n\
-            \tDoor_timer:\t{:#?}",
-            self.elevator,
-            self.state,
-            self.nxt_order,
-            self.obstruction,
-            self.channels,
-            self.master_channels,
-            self.door_timer
-        )
-    }
-}

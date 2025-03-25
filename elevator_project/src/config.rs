@@ -7,7 +7,8 @@ use std::path::Path;
 use std::result::Result;
 
 // constants variables for the elevator system
-// Struggled to put these in the config file due to compile time errors
+// Struggled to put these in the config file due to compile time errors. 
+// William - Gjorde vi ikke dette før?
 pub const NUMBER_OF_FLOORS      : usize = 4;
 pub const NUMBER_OF_ELEVATORS   : usize = 2;
 
