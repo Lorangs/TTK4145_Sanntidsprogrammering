@@ -1,8 +1,8 @@
-// This file contains the TCP module, which is responsible for handling the TCP connection between the elevator and the scheduler.
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, write};
-
-use crate::master::MasterQueues;
+use std::fmt::{Display as FmtDisplay, Result as FmtResult, Formatter as FmtFormatter};
+use crate::config::NUMBER_OF_FLOORS;
+use crate::slave::ElevatorState;
+use crate::master::OrderRequests;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct CallButton {
@@ -10,8 +10,8 @@ pub struct CallButton {
     pub call: u8, // 0: UP, 1: DOWN, 2: CAB
 }
 
-impl fmt::Display for CallButton {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtDisplay for CallButton {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         write!(f, "Floor: {}, Call: {}", self.floor, self.call)
     }
 }
@@ -20,20 +20,23 @@ impl fmt::Display for CallButton {
 pub enum Message {
     NewOrder(CallButton),
     OrderComplete(CallButton),
-    LightMatrix(Vec<[bool; 3]>), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
+    LightMatrix([[bool; 3]; NUMBER_OF_FLOORS]), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
     Error(ErrorState),
-    Backup(MasterQueues),
+    Backup(OrderRequests),
+    StateUpdate(ElevatorState),
     Idle,
 }
 
-impl fmt::Display for Message {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+impl FmtDisplay for Message {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
             Message::NewOrder(call_button) => write!(f, "New Order: {}", call_button),
             Message::OrderComplete(call_button) => write!(f, "Order complete: {}", call_button),
-            Message::LightMatrix(matrix) => write!(f, "Light matrix"),
+            Message::LightMatrix(_matrix) => write!(f, "Light matrix"),
             Message::Error(id) => write!(f, "Error: {}", id),
             Message::Backup(b) => write!(f, "Backup: {:#?}", b),
+            Message::StateUpdate(state) => write!(f, "State update: {}", state),
             Message::Idle=> write!(f, "Idle"),
         }
     }
@@ -45,17 +48,15 @@ pub enum ErrorState {
     EmergancyStop,
     DoorObstruction,
     Network,
-    NoMaster,
 }
 
-impl fmt::Display for ErrorState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl FmtDisplay for ErrorState {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
             ErrorState::OK => write!(f, "OK"),
             ErrorState::EmergancyStop => write!(f, "Emergancy stop"),
             ErrorState::DoorObstruction => write!(f, "Door obstruction"),
             ErrorState::Network => write!(f, "Network error"),
-            ErrorState::NoMaster => write!(f, "No connected Master"),
         }
     }
 }

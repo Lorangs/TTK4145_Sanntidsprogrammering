@@ -1,11 +1,11 @@
 use crossbeam_channel::{self as cbc};
 use driver_rust::elevio::{self};
-use std::fmt;
+use std::fmt::{Display as FmtDisplay, Result as FmtResult, Formatter as FmtFormatter};
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
-use crate::tcp;
+use crate::tcp::{Message, ErrorState};
 
 // Struct containing all the rx channels from the elevator io driver. 
 #[derive(Debug, Clone)]
@@ -14,6 +14,26 @@ pub struct SlaveChannels {
     pub call_button_rx  : cbc::Receiver<elevio::poll::CallButton>,
     pub stop_button_rx  : cbc::Receiver<bool>,
     pub obstruction_rx  : cbc::Receiver<bool>,
+}
+
+impl FmtDisplay for SlaveChannels {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!(
+            f,
+            "SlaveChannels {{
+    floor_sensor_rx: {:?},
+    call_button_rx: {:?},
+    stop_button_rx: {:?},
+    obstruction_rx: {:?},
+
+}}",
+            self.floor_sensor_rx,
+            self.call_button_rx,
+            self.stop_button_rx,
+            self.obstruction_rx,
+
+        )
+    }
 }
 
 // Spawns threads for all the slave input channels and returns a SlaveChannels struct. 
@@ -57,54 +77,33 @@ pub fn spawn_threads_for_slave_inputs
 }
 
 
-impl fmt::Display for SlaveChannels {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "SlaveChannels {{
-    floor_sensor_rx: {:?},
-    call_button_rx: {:?},
-    stop_button_rx: {:?},
-    obstruction_rx: {:?},
-
-}}",
-            self.floor_sensor_rx,
-            self.call_button_rx,
-            self.stop_button_rx,
-            self.obstruction_rx,
-
-        )
-    }
-}
-
-
 pub fn spawn_thread_for_master_connection
 (
     mut stream: TcpStream,
     input_poll_rate_ms: u64,
-) -> (cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)
+) -> (cbc::Sender<Message>, cbc::Receiver<Message>)
 {
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
-    let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded::<tcp::Message>();
-    let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded::<tcp::Message>();
+    let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded::<Message>();
+    let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded::<Message>();
 
     //stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
     stream.set_read_timeout(Some(poll_period)).expect("Failed to set read timeout");
     stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout");
 
     spawn(move || {
-        let mut encoded = [0; 1024];
+        let mut encoded: [u8; 1024] = [0; 1024];
         loop {
             match slave_to_master_rx.try_recv() {
                 Ok(message) => {
-                    let encoded = bincode::serialize(&message).expect("Failed to serialize message");
+                    let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message");
                     match stream.write(&encoded) {
                         Ok(_) => {
                             println!("[SLAVE]\t\tSent message to master: {:#?}", message);
                         }
                         Err(e) => {
                             println!("[SLAVE]\t\tFailed to write to stream: {}", e);
-                            master_to_slave_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                            master_to_slave_tx.send(Message::Error(ErrorState::Network)).unwrap();
                         }
                     }
                 }
@@ -117,9 +116,9 @@ pub fn spawn_thread_for_master_connection
             match stream.read(&mut encoded) {
                 Ok(size) => {
                     if size > 0 {
-                        let message: tcp::Message = bincode::deserialize(&encoded).expect("Failed to deserialize message");
-                        println!("[SLAVE]\t\tReceived message from master: {:#?}", message);
-                        master_to_slave_tx.send(message).unwrap();
+                        let msg: Message = bincode::deserialize::<Message>(&encoded).expect("Failed to deserialize message");
+                        println!("[SLAVE]\t\tReceived message from master: {:#?}", msg);
+                        master_to_slave_tx.send(msg).unwrap();
                     }
                 }
                 Err(e) => {
@@ -129,7 +128,7 @@ pub fn spawn_thread_for_master_connection
                         }
                         _ => {
                             println!("[SLAVE]\t\tFailed to read from stream: {}", e);
-                            master_to_slave_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                            master_to_slave_tx.send(Message::Error(ErrorState::Network)).unwrap();
                         }
                     }
                 }
