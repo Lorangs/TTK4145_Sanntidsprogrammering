@@ -453,6 +453,8 @@ impl Master {
     }
 }
 
+
+// Handles the individual slave connections
 fn handle_slave_connection(
     mut stream: TcpStream,
     slave_to_master_tx: cbc::Sender<tcp::Message>,
@@ -481,6 +483,7 @@ fn handle_slave_connection(
                         slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
                     }
                 }
+
             }
         }
 
@@ -527,3 +530,56 @@ fn handle_backup_connection(
         }
     }
 }
+
+
+pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
+    let listener = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
+    println!("[MASTER]\tListening for new connection");
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                //stream.set_read_timeout(Some(Duration::from_secs(tcp_timeout))).expect("Failed to set read timeout");
+                return Some(stream);
+            }
+            Err(e) => {
+                println!("[MASTER]\tFailed to establish connection: {}", e);
+                return None;
+            }
+        }
+    }
+    None
+}
+
+
+
+pub fn master_read_from_clients(
+    mut stream: TcpStream,
+    input_poll_rate_ms: u64,
+) -> cbc::Receiver<tcp::Message> {
+    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
+
+    let (tx, rx) = cbc::unbounded::<tcp::Message>();
+    spawn(move || {
+        let mut encoded = [0; 1024];
+        loop {
+            match stream.read(&mut encoded) {
+                Ok(size) => {
+                    if size > 0 {
+                        let message: tcp::Message =
+                            bincode::deserialize(&encoded).expect("Failed to deserialize message");
+                        println!("[MASTER]\tReceived message from client: {:#?}", message);
+                        tx.send(message).unwrap();
+                    }
+                }
+                Err(e) => {
+                    println!("[MASTER]\tFailed to read from tcp-stream: {}", e);
+                    continue; // TODO: Check if this is correct. Maybe need to return something to scheck if the connection is lost. 
+                }
+            }
+            std::thread::sleep(poll_period);
+        }
+    });
+    rx
+}
+
+
