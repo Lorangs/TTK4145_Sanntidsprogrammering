@@ -87,9 +87,11 @@ pub fn spawn_thread_for_master_connection
     let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded::<Message>();
     let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded::<Message>();
 
-    //stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
-    stream.set_read_timeout(Some(poll_period)).expect("Failed to set read timeout");
-    stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout");
+    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+    //stream.set_read_timeout(Some(poll_period)).expect("Failed to set read timeout");
+    //stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout");
+    stream.set_nodelay(true).expect("Failed to set nodelay"); // Gjør store forbedringer i ytelse. Må være true
+    stream.set_ttl(3).expect("Failed to set ttl");
 
     spawn(move || {
         let mut encoded: [u8; 1024] = [0; 1024];

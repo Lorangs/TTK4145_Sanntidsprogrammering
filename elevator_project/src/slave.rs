@@ -4,7 +4,6 @@ use driver_rust::elevio::elev::{self as e, HALL_DOWN, HALL_UP, CAB, DIRN_DOWN, D
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
-use std::os::unix::net::SocketAddr;
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
 use crate::config::{Config, NUMBER_OF_FLOORS};
@@ -332,7 +331,7 @@ impl Slave {
                         self.timestamp_prev_floor = std::time::Instant::now();
 
                         self.elevator.floor_indicator(self.state.floor);
-                        
+
                         if self.state.floor == self.nxt_order.floor{
                             self.state.direction = Direction::Stop;
                             self.elevator.motor_direction(DIRN_STOP);

@@ -190,6 +190,7 @@ impl Master {
         master.try_connect_to_new_backup();
 
         let master_port             : u16 = config.master_port;
+        let tcp_timeout_ms          : u64 = config.tcp_timeout_ms;
         let ip_config_clone         : [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list.clone();
         let slave_channels_clone    : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS] >> = Arc::clone(&master.slave_channels);
         let requests_clone          : Arc<Mutex<OrderRequests>> = Arc::clone(&master.requests);
@@ -225,7 +226,7 @@ impl Master {
                             "[MASTER]\tNew slave connection established: {}",
                             stream.peer_addr().unwrap()
                         );
-                        spawn(|| handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx));
+                        spawn(move || handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx, tcp_timeout_ms));
                         
                         // send previous cab orders to slave
                         println!("[MASTER]\tSending previous orders to slave");
@@ -468,10 +469,17 @@ fn handle_slave_connection(
     mut stream: TcpStream,
     slave_to_master_tx: cbc::Sender<tcp::Message>,
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
+    tcp_timeout_ms: u64,
 ) {
     let mut buffer: [u8; 1024] = [0; 1024];
-    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");    
+
+    //stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout on stream");
+    //stream.set_write_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set write timeout on stream");
+
+    stream.set_ttl(3).expect("Failed to set TTL on stream");
+
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
+    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
 
     loop {
         match stream.read(&mut buffer) {
@@ -517,7 +525,7 @@ fn handle_backup_connection(
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
     backup_disconected_tx: cbc::Sender<bool>,
 ) {
-    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
     loop {
         match master_to_backup_rx.recv() {
