@@ -317,89 +317,8 @@ impl Slave {
     pub fn slave_loop(&mut self) {
         loop {
 
-            /**************local operation mode***************/
-            if self.master_channels.is_none() {
-                cbc::select! {
-                    // Receive call button message from elevator
-                    recv(self.channels.call_button_rx) -> msg => {
-                        let call_button = msg.unwrap();
-                        println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
-            
-                        // Update local cab requests
-                        if call_button.call == 2 {
-                            self.state.cab_requests[call_button.floor as usize] = true;
-                        }
-            
-                        self.sync_lights_local();
-                        
-                        match self.state.behaviour {
-                            ElevatorBehaviour::Idle => {
-                                self.start_moving_local();
-                            },
-                            _ => {},
-                        }
-                    }
-                    
-                    // Receive floor sensor message from elevator
-                    recv(self.channels.floor_sensor_rx) -> msg => {
-                        let floor_sensor = msg.unwrap();
-                        println!("[SLAVE]\t\tReceived floor sensor message: {:#?}", floor_sensor);
-                        self.state.floor = floor_sensor;
-            
-                        match self.state.behaviour {
-                            ElevatorBehaviour::Moving => { 
-                                self.state.floor = floor_sensor;
-                                self.elevator.floor_indicator(self.state.floor as u8);
-                                if self.should_stop() {
-                                    println!("[SLAVE]\t\tStopping at floor {:?}", self.state.floor);
-                                    self.set_behaviour(ElevatorBehaviour::DoorOpen);
-                                    self.elevator.door_light(true);
-                                    self.clear_at_current_floor();
-                                    self.sync_lights_local();
-                                    self.elevator.motor_direction(DIRN_STOP);
-            
-                                    start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);    // starting doortimer
-                                }
-                            },
-                            _ => {},
-                        }
-                    }
-            
-                    // Receive stop button message from elevator
-                    recv(self.channels.stop_button_rx) -> msg => {
-                        let stop_button = msg.unwrap();
-                        println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
-                        self.elevator.motor_direction(DIRN_STOP);
-                        self.set_behaviour(ElevatorBehaviour::OutOfOrder);
-                    }
-            
-                    recv(self.channels.obstruction_rx) -> msg => {
-                        let obstr = msg.unwrap();
-                        self.obstruction = obstr;
-            
-                        println!("[SLAVE]\t\tObstruction: {:#?}", obstr);
-                    }
-            
-                    // Receive timer message
-                    recv(self.door_timer.1) -> _msg => {
-                        if self.obstruction {
-                            //println!("Obstruction detected. Timer reset.");
-                            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
-                        }
-                        else {
-                            println!("[SLAVE]\t\tTimer expired. Door closing.");
-                            self.elevator.door_light(false);
-                            self.set_behaviour(ElevatorBehaviour::Idle);
-                            self.start_moving_local();
-                        }
-                    }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms)) =>  self.try_connect_to_new_master(),
-                }// cbc::select!
-            }// if master_channels.is_none
-
-
-            /**************normal operation***************/
-            else {
+            /************** normal operation ***************/
+            if self.master_channels.is_some() {
                 cbc::select! {
                     // Receive floor sensor from elevator
                     recv(self.channels.floor_sensor_rx) -> msg => {
@@ -538,7 +457,89 @@ impl Slave {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
                             self.send_state_update();
                         }
-                    },
+                    }
+                }// cbc::select
+            } // if
+
+
+
+            /************** local operation mode ***************/
+            else {
+
+                cbc::select! {
+                    // Receive call button message from elevator
+                    recv(self.channels.call_button_rx) -> msg => {
+                        let call_button = msg.unwrap();
+                        println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
+            
+                        // Update local cab requests
+                        if call_button.call == 2 {
+                            self.state.cab_requests[call_button.floor as usize] = true;
+                        }
+            
+                        self.sync_lights_local();
+                        
+                        match self.state.behaviour {
+                            ElevatorBehaviour::Idle => {
+                                self.start_moving_local();
+                            },
+                            _ => {},
+                        }
+                    }
+                    
+                    // Receive floor sensor message from elevator
+                    recv(self.channels.floor_sensor_rx) -> msg => {
+                        let floor_sensor = msg.unwrap();
+                        println!("[SLAVE]\t\tReceived floor sensor message: {:#?}", floor_sensor);
+                        self.state.floor = floor_sensor;
+            
+                        match self.state.behaviour {
+                            ElevatorBehaviour::Moving => { 
+                                self.state.floor = floor_sensor;
+                                self.elevator.floor_indicator(self.state.floor as u8);
+                                if self.should_stop() {
+                                    println!("[SLAVE]\t\tStopping at floor {:?}", self.state.floor);
+                                    self.set_behaviour(ElevatorBehaviour::DoorOpen);
+                                    self.elevator.door_light(true);
+                                    self.clear_at_current_floor();
+                                    self.sync_lights_local();
+                                    self.elevator.motor_direction(DIRN_STOP);
+            
+                                    start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);    // starting doortimer
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+            
+                    // Receive stop button message from elevator
+                    recv(self.channels.stop_button_rx) -> msg => {
+                        let stop_button = msg.unwrap();
+                        println!("[SLAVE]\t\tStop button: {:#?}", stop_button);
+                        self.elevator.motor_direction(DIRN_STOP);
+                        self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                    }
+            
+                    recv(self.channels.obstruction_rx) -> msg => {
+                        let obstr = msg.unwrap();
+                        self.obstruction = obstr;
+            
+                        println!("[SLAVE]\t\tObstruction: {:#?}", obstr);
+                    }
+            
+                    // Receive timer message
+                    recv(self.door_timer.1) -> _msg => {
+                        if self.obstruction {
+                            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
+                        }
+                        else {
+                            println!("[SLAVE]\t\tTimer expired. Door closing.");
+                            self.elevator.door_light(false);
+                            self.set_behaviour(ElevatorBehaviour::Idle);
+                            self.start_moving_local();
+                        }
+                    }
+                    default(Duration::from_millis(self.config.input_poll_rate_ms)) =>  self.try_connect_to_new_master(),
                 }// cbc::select
             } // else
         } // loop
