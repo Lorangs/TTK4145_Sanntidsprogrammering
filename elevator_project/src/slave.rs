@@ -4,6 +4,7 @@ use driver_rust::elevio::elev::{self as e, HALL_DOWN, HALL_UP, CAB, DIRN_DOWN, D
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
+use std::os::unix::net::SocketAddr;
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
 use crate::config::{Config, NUMBER_OF_FLOORS};
@@ -137,7 +138,7 @@ impl Slave {
             cbc::select! {
                 recv(slave.channels.floor_sensor_rx) -> msg => {
                     let floor_sensor = msg.unwrap();
-                    println!("Received floor sensor message: {:#?}", floor_sensor);
+                    println!("[SLAVE]\t\tReceived floor sensor message: {:#?}", floor_sensor);
                     slave.state.floor = floor_sensor;
                     if slave.state.floor !=u8::MAX{
                         slave.elevator.motor_direction(DIRN_STOP);
@@ -165,14 +166,12 @@ impl Slave {
   
     fn try_connect_to_new_master(&mut self) {
         for ip_addr in &self.config.elevator_ip_list {
-            let socket_addr = std::net::SocketAddrV4::new(*ip_addr, self.config.master_port);
+            let socket_addr = std::net::SocketAddr::new(std::net::IpAddr::V4(*ip_addr), self.config.master_port);
 
-            match TcpStream::connect(socket_addr) {
+            match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(1)) {
                 Ok(stream) => {
                     println!("[SLAVE]\t\tConnected to master at {}:{}", ip_addr, self.config.master_port);
                     self.master_channels = Some(inputs::spawn_thread_for_master_connection(stream, self.config.input_poll_rate_ms));
-                    //send status til master
-                    //self.send_state_update(); trur ikkje vi trenge ditta siden det blir gjort inne i set behavior og
                     //Stop the elevator, and let the master decide what to do 
                     //ditta gjær at de blir et lite hakk, men e de innafor siden de e beire en at den kjøre utforbi
                     self.elevator.motor_direction(DIRN_STOP);
@@ -323,18 +322,17 @@ impl Slave {
             /************** normal operation ***************/
             if self.master_channels.is_some() {
                 cbc::select! {
+
                     // Receive floor sensor from elevator
                     recv(self.channels.floor_sensor_rx) -> msg => {
                         let floor_sensor = msg.unwrap();
                         self.state.floor = floor_sensor;
-                        self.send_state_update(); // jobba med å få til å ta ordre på veien so la til dinna, men går ikkje endå
 
-                        self.timestamp_prev_floor = std::time::Instant::now();
                         start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
-                        println!("[SLAVE]\t\tStarted motortimeout timer");
-                        
+                        self.timestamp_prev_floor = std::time::Instant::now();
 
                         self.elevator.floor_indicator(self.state.floor);
+                        
                         if self.state.floor == self.nxt_order.floor{
                             self.state.direction = Direction::Stop;
                             self.elevator.motor_direction(DIRN_STOP);
@@ -343,6 +341,11 @@ impl Slave {
                             start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s); 
                             self.send_order_complete();
                         }
+                        else {
+                            self.send_state_update(); // jobba med å få til å ta ordre på veien so la til dinna, men går ikkje endå
+                        }
+
+
                     }
 
                     // Receive call buttons from elevator
@@ -461,7 +464,7 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*10)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
                             self.send_state_update();
                         }

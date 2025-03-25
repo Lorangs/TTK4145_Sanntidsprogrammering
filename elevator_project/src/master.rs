@@ -470,9 +470,8 @@ fn handle_slave_connection(
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
 ) {
     let mut buffer: [u8; 1024] = [0; 1024];
-    stream
-        .set_nonblocking(true)
-        .expect("Failed to set non-blocking mode on stream");    
+    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");    
+    stream.set_nodelay(true).expect("Failed to set nodelay on stream");
 
     loop {
         match stream.read(&mut buffer) {
@@ -518,6 +517,8 @@ fn handle_backup_connection(
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
     backup_disconected_tx: cbc::Sender<bool>,
 ) {
+    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+    stream.set_nodelay(true).expect("Failed to set nodelay on stream");
     loop {
         match master_to_backup_rx.recv() {
             Ok(message) => {
@@ -526,7 +527,7 @@ fn handle_backup_connection(
                     Ok(_)=>{println!("[MASTER]\tSent order to backup: {:#?}", message);}
                     Err(_)=>{
                         eprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
-                        backup_disconected_tx.send(true).unwrap();//tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                        backup_disconected_tx.send(true).unwrap(); 
                         return;
                     }
                 }
@@ -539,53 +540,3 @@ fn handle_backup_connection(
     }
 }
 
-
-pub fn listen_for_new_connection(port: &String) -> Option<TcpStream> {
-    let listener = TcpListener::bind("0.0.0.0".to_string() + ":" + port).expect("Failed to bind");
-    println!("[MASTER]\tListening for new connection");
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                //stream.set_read_timeout(Some(Duration::from_secs(tcp_timeout))).expect("Failed to set read timeout");
-                return Some(stream);
-            }
-            Err(e) => {
-                println!("[MASTER]\tFailed to establish connection: {}", e);
-                return None;
-            }
-        }
-    }
-    None
-}
-
-
-
-pub fn master_read_from_clients(
-    mut stream: TcpStream,
-    input_poll_rate_ms: u64,
-) -> cbc::Receiver<tcp::Message> {
-    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
-
-    let (tx, rx) = cbc::unbounded::<tcp::Message>();
-    spawn(move || {
-        let mut encoded = [0; 1024];
-        loop {
-            match stream.read(&mut encoded) {
-                Ok(size) => {
-                    if size > 0 {
-                        let message: tcp::Message =
-                            bincode::deserialize(&encoded).expect("Failed to deserialize message");
-                        println!("[MASTER]\tReceived message from client: {:#?}", message);
-                        tx.send(message).unwrap();
-                    }
-                }
-                Err(e) => {
-                    println!("[MASTER]\tFailed to read from tcp-stream: {}", e);
-                    continue; // TODO: Check if this is correct. Maybe need to return something to scheck if the connection is lost. 
-                }
-            }
-            std::thread::sleep(poll_period);
-        }
-    });
-    rx
-}
