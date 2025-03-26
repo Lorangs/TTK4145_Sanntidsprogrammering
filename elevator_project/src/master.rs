@@ -94,7 +94,7 @@ impl OrderRequests {
         else { return None; }
         
         let elevator= self.states[slave_number].clone();
-        if elevator.behaviour != ElevatorBehaviour::OutOfOrder {
+        if elevator.behaviour == ElevatorBehaviour::Idle {
             match elevator.direction {
                 Direction::Down => {
                     for i in (0..elevator.floor).rev() {
