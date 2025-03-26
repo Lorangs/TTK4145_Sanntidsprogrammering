@@ -344,11 +344,8 @@ impl Slave {
                             self.elevator.motor_direction(DIRN_STOP);
                             self.set_behaviour(ElevatorBehaviour::DoorOpen);
                             self.elevator.door_light(true);
-                            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s); 
                             self.send_order_complete();
-                        }
-                        else {
-                            self.send_state_update(); // jobba med å få til å ta ordre på veien so la til dinna, men går ikkje endå
+                            start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s); 
                         }
 
 
