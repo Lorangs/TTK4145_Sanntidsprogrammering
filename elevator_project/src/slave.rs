@@ -363,6 +363,7 @@ impl Slave {
                             self.elevator.motor_direction(DIRN_STOP);
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_stop_button();
+                            return;
                         } 
                         else {
                             self.set_behaviour(ElevatorBehaviour::Idle);
@@ -402,6 +403,7 @@ impl Slave {
                             println!("[SLAVE]\t\tMotor timeout. Out of order.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_state_update();
+                            return;
                         }
                     }
 

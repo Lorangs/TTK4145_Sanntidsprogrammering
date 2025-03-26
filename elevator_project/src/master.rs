@@ -2,6 +2,7 @@ use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
 use bincode;
+use serde_json::{json, Value, Map};
 
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::{Read, Write};
@@ -55,7 +56,7 @@ impl OrderRequests {
         // return the next order for the slaves
         let orders: HashMap<String, Vec<[bool; 3]>>;
 
-        let input = self.to_custom_json();
+        let input = self.to_custom_json_for_hall_assigner();
 
 
         let output = Command::new("../hall_request_assigner")
@@ -122,8 +123,8 @@ impl OrderRequests {
         return None; 
     }
     
-    fn to_custom_json(&self) -> String {
-        use serde_json::{json, Value, Map};
+    pub fn to_custom_json_for_hall_assigner(&self) -> String {
+
         // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
         let hall_requests: Vec<Value> = self.hallRequests
             .iter()
@@ -138,7 +139,7 @@ impl OrderRequests {
                     "behaviour": state.behaviour.to_ascii_lowercase(),
                     "direction": state.direction.to_ascii_lowercase(),
                     "cabRequests": state.cab_requests,
-                });
+                    });
                 states.insert(key.to_string(), state_object);
             }
         }
@@ -148,6 +149,16 @@ impl OrderRequests {
             "states": states,
         }); 
         serde_json::to_string(&result).unwrap()
+    }
+
+    pub fn to_custom_json(&self) -> String {
+        match serde_json::to_string(&self){
+            Ok(json) => json,
+            Err(e) => {
+                println!("[MASTER]\tFailed to serialize OrderRequests to JSON: {}", e);
+                String::new()
+            }
+        }
     }
 }
 
