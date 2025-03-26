@@ -190,7 +190,7 @@ impl Master {
         let mut master = Master {
             config                  : config.clone(),
             requests                : Arc::new(Mutex::new(order_requests)),
-            slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),            // spørsmål???
+            slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),            // spørsmål??? Ditta ville ikkje compile på mi maskin
             master_to_backup_tx     : None,
             backup_disconected_rx   : cbc::unbounded().1,
         };

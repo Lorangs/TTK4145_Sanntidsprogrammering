@@ -3,9 +3,6 @@ use std::path::Path;
 use std::process::Command;
 use debug_print::debug_println as dprintln;
 
-
-// Main func for backup. Initializes backup. If backup crashes, it will restart and connect to a new master. 
-// We need to seperate between the backup crashing: restart as backup, and master crashing: start a master.
 fn main() {
     let config = Config::read_config(Path::new("config.json")).unwrap();
 
@@ -13,12 +10,14 @@ fn main() {
     let masterqueues_result = backup.backup_loop();
     
     match masterqueues_result {
+        //Backup loop ended because it lost conection to master -> start a new master
         Ok(masterqueues) => {
             Command::new("cargo")
                 .args(["run", "--bin", "master_main", masterqueues.to_custom_json().as_str()])
                 .spawn()
                 .expect("Failed to start master_main");
         }
+        //Backup loop ended because of an error -> start a new backup
         Err(e) => {
             dprintln!("[BACKUP]\tBackup loop failed: {:?}", e);
             dprintln!("[BACKUP]\tRestarting backup");

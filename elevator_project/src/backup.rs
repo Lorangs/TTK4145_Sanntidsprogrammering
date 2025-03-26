@@ -51,7 +51,6 @@ impl Backup {
     }
 
     // Updates backup orders and returns them if master disconnects
-    // Ned to handle the case where the backup recieves a message but dont update the orders. May need to be handled in both backup and master.
     pub fn backup_loop(&mut self) -> Result<OrderRequests, cbc::RecvError> {
         loop {
             match self.master_to_backup_rx.recv() {
@@ -62,6 +61,8 @@ impl Backup {
                             dprintln!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
                         }
                         Message::Error(ErrorState::Network) => {
+                            //We asume that most errors ocure becouse of error in the master, so we start a new master. 
+                            //Worst case is we start a second master, but this will give an error so the master will not fully initialize, and instead start a new backup anyway
                             dprintln!("[BACKUP]\tMaster disconnected");
                             return Ok(self.orders.clone());
                         }
@@ -70,10 +71,6 @@ impl Backup {
                 }
                 Err(cbc::RecvError) => {
                     dprintln!("[BACKUP]\tMaster disconnected");
-
-                    // try sending error state to master so that master can initilize an other backup.
-                    // if not possible, return orders and inititize self as new master.
-
                     return Ok(self.orders.clone());
                 }
             }
@@ -88,7 +85,6 @@ fn handle_master_connection(
     master_to_backup_tx: cbc::Sender<Message>,
 ) //-> Result<(), cbc::RecvError>
 {
-
     // TTL is set to 3 to prevent packets from being forwarded to other networks
     stream.set_ttl(3).expect("Failed to set TTL on stream");
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
@@ -104,14 +100,14 @@ fn handle_master_connection(
                     dprintln!("[BACKUP]\tReceived message from master: {:#?}", msg);
                     master_to_backup_tx.send(msg).unwrap();
                 }
-                else{ //e dinna so blir utført vist eg drepe master
+                else{
                     dprintln!("[BACKUP]\tLost conection to master");
                     let msg = Message::Error(ErrorState::Network);
                     master_to_backup_tx.send(msg).unwrap();
                     break;
                 }
             }
-            Err(e) => { // då kan vi nokk forenkle eller fjerne dinna litt trudde den kom til å fange opp disconecten
+            Err(e) => {
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                     // No data available, continue the loop
                     continue;

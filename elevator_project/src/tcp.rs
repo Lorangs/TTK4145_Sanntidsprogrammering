@@ -21,10 +21,10 @@ impl FmtDisplay for CallButton {
 pub enum Message {
     NewOrder(CallButton),
     OrderComplete(CallButton),
-    LightMatrix([[bool; 2]; NUMBER_OF_FLOORS]), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
-    Error(ErrorState),
-    Backup(OrderRequests),
     StateUpdate(ElevatorState),
+    LightMatrix([[bool; 2]; NUMBER_OF_FLOORS]), // Hall_UP, Hall_DOWN for each floor. 
+    Backup(OrderRequests),
+    Error(ErrorState),
 }
 
 impl FmtDisplay for Message {
@@ -32,17 +32,16 @@ impl FmtDisplay for Message {
         match self {
             Message::NewOrder(call_button) => write!(f, "New Order: {}", call_button),
             Message::OrderComplete(call_button) => write!(f, "Order complete: {}", call_button),
-            Message::LightMatrix(_matrix) => write!(f, "Light matrix"),
-            Message::Error(id) => write!(f, "Error: {}", id),
-            Message::Backup(b) => write!(f, "Backup: {:#?}", b),
             Message::StateUpdate(state) => write!(f, "State update: {}", state),
+            Message::LightMatrix(_matrix) => write!(f, "Light matrix"),
+            Message::Backup(b) => write!(f, "Backup: {:#?}", b),
+            Message::Error(id) => write!(f, "Error: {}", id),
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum ErrorState {
-    
+pub enum ErrorState {    
     EmergancyStop,
     Network,
 }

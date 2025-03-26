@@ -24,17 +24,14 @@ impl FmtDisplay for SlaveChannels {
         write!(
             f,
             "SlaveChannels {{
-    floor_sensor_rx: {:?},
-    call_button_rx: {:?},
-    stop_button_rx: {:?},
-    obstruction_rx: {:?},
-
-}}",
+            floor_sensor_rx: {:?},
+            call_button_rx: {:?},
+            stop_button_rx: {:?},
+            obstruction_rx: {:?},}}",
             self.floor_sensor_rx,
             self.call_button_rx,
             self.stop_button_rx,
             self.obstruction_rx,
-
         )
     }
 }
@@ -86,15 +83,16 @@ pub fn spawn_thread_for_master_connection
     input_poll_rate_ms: u64,
 ) -> (cbc::Sender<Message>, cbc::Receiver<Message>)
 {
-    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
+    let poll_period: Duration = Duration::from_millis(input_poll_rate_ms); 
     let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded::<Message>();
     let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded::<Message>();
 
     stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
-    //stream.set_read_timeout(Some(poll_period)).expect("Failed to set read timeout");
-    //stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout");
-    stream.set_nodelay(true).expect("Failed to set nodelay"); // Gjør store forbedringer i ytelse. Må være true
+    stream.set_nodelay(true).expect("Failed to set nodelay");
     stream.set_ttl(3).expect("Failed to set ttl");
+    stream.set_read_timeout(Some(poll_period)).expect("Failed to set read timeout"); //foreslår egentli at vi tar med dissa i koda sånn at dei ser at vi har prøvd, men gjor kansje feil
+    stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout"); //--- enig?
+    //men timeout burde vel vær meir en 25 ms?
 
     spawn(move || {
         let mut encoded: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
@@ -114,7 +112,7 @@ pub fn spawn_thread_for_master_connection
                 }
                 Err(_e) => {
                     //dprintln!("[SLAVE]\t\tFailed to receive message from channel: {}", e);
-                    continue;
+                    continue; //kofor ignorera vi dissa feila?
                 }
             }
 
@@ -128,9 +126,7 @@ pub fn spawn_thread_for_master_connection
                 }
                 Err(e) => {
                     match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            // dprintln!("[SLAVE]\t\tNo data available");
-                        }
+                        std::io::ErrorKind::WouldBlock => {} //No data avalable yet
                         _ => {
                             dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
                             master_to_slave_tx.send(Message::Error(ErrorState::Network)).unwrap();
@@ -138,7 +134,7 @@ pub fn spawn_thread_for_master_connection
                     }
                 }
             }
-            sleep(poll_period);
+            sleep(poll_period); //eg vil teste uten sleep hær
         }
     });
     (slave_to_master_tx, master_to_slave_rx)

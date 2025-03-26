@@ -9,7 +9,7 @@ use std::result::Result;
 use debug_print::debug_println as dprintln;
 
 
-// constants variables for the elevator system
+// Constant variables for the elevator system
 // Struggled to put these in the config file due to compile time errors
 pub const NUMBER_OF_FLOORS      : usize = 4;
 pub const NUMBER_OF_ELEVATORS   : usize = 3;
@@ -70,7 +70,7 @@ mod ipv4_address_vec {
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
     #[serde(with = "ipv4_address_vec")]
-    pub elevator_ip_list: [Ipv4Addr; NUMBER_OF_ELEVATORS],
+    pub elevator_ip_list        : [Ipv4Addr; NUMBER_OF_ELEVATORS],
     pub master_port             : u16,
     pub backup_port             : u16,
     pub slave_port              : u16,

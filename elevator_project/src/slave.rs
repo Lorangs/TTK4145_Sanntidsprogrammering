@@ -248,7 +248,6 @@ impl Slave {
                 dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
                 return;
             }
-
             match self.master_channels.as_mut().unwrap().0.send(message) {
                 Ok(_) => {dprintln!("[SLAVE]\t\tSent order complite");},
                 Err(e) => {dprintln!("[SLAVE]\t\tFailed to send order complete: {}", e)},
