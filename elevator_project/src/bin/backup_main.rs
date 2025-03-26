@@ -1,6 +1,7 @@
 use elevator_project::{backup::Backup, config::Config};
 use std::path::Path;
 use std::process::Command;
+use debug_print::debug_println as dprintln;
 
 
 // Main func for backup. Initializes backup. If backup crashes, it will restart and connect to a new master. 
@@ -19,8 +20,8 @@ fn main() {
                 .expect("Failed to start master_main");
         }
         Err(e) => {
-            println!("[BACKUP]\tBackup loop failed: {:?}", e);
-            println!("[BACKUP]\tRestarting backup");
+            dprintln!("[BACKUP]\tBackup loop failed: {:?}", e);
+            dprintln!("[BACKUP]\tRestarting backup");
             Command::new("cargo")
                 .args(["run", "--bin", "backup_main"])
                 .spawn()

@@ -5,6 +5,8 @@ use std::path::Path;
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
+use debug_print::debug_println as dprintln;
+
 
 
 fn main() {
@@ -13,13 +15,13 @@ fn main() {
     let slave_ip = config.elevator_ip_list[args[1].parse::<usize>().unwrap()].to_string() + ":" + &config.slave_port.to_string();
     
     
-    print!("trying to start a slave\n");    
+    dprintln!("trying to start a slave\n");    
 
     let mut slave = Slave::init(slave_ip.clone(), &config);
-    print!("Slave initialized\n");
+    dprintln!("Slave initialized\n");
 
     slave.slave_loop();
-    print!("[SLAVE]\t\tslave failed, restarting slave\n");
+    dprintln!("[SLAVE]\t\tslave failed, restarting slave\n");
     drop(slave);
 
     sleep(Duration::from_secs(1));
