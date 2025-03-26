@@ -265,6 +265,7 @@ impl Master {
                         None => {}
                     }
                 }
+                drop(locked_channels);
             }
         });
 

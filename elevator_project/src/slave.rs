@@ -471,14 +471,15 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*10)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
                             self.send_state_update();
                         }
 
-                        // check if master heartbeat has overrun the set time
-                        if self.timestamp_master_hb + Duration::from_secs(self.config.heartbeat_s) < Instant::now() {
-                            
+                        // check if master heartbeat has overrun the set time. If so, disconnect from master
+                        // add 100 ms as overlap to account for delay.
+                        if self.timestamp_master_hb + Duration::from_secs(self.config.heartbeat_s) < Instant::now() + Duration::from_millis(100) {
+                            self.master_channels = None;
                         }
                     }
                 }// cbc::select
