@@ -228,7 +228,7 @@ impl Slave {
             2 => {
                 self.state.cab_requests[callbutton.floor as usize] = true;
                 self.send_state_update();
-                self.sync_cab_lights(); //litt smartare
+                self.sync_cab_lights(); 
             },
             _ => panic!("Mottok ukjent knappetype"),
         }
@@ -470,7 +470,7 @@ impl Slave {
                             _ => {},   // Do nothing for OrderComplete messages and other messages
                         }
                     }
-                    default(Duration::from_millis(self.config.input_poll_rate_ms*10)) => {
+                    default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
                             self.send_state_update();
                         }
