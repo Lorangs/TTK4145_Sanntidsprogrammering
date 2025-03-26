@@ -123,6 +123,10 @@ pub fn spawn_thread_for_master_connection
                         println!("[SLAVE]\t\tReceived message from master: {:#?}", msg);
                         master_to_slave_tx.send(msg).unwrap();
                     }
+                    else{
+                        println!("[SLAVE]\t\tFailed to read from stream");
+                        master_to_slave_tx.send(Message::Error(ErrorState::Network)).unwrap();
+                    }
                 }
                 Err(e) => {
                     match e.kind() {

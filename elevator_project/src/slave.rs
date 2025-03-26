@@ -100,9 +100,9 @@ pub struct Slave {
 }
 
 impl Slave {
-    pub fn init(slave_addr: String, config: &Config) -> Slave {
+    pub fn init(config: &Config) -> Slave {
         let conf: Config = config.clone();
-        let elev: e::Elevator = e::Elevator::init(&slave_addr, NUMBER_OF_FLOORS as u8)
+        let elev: e::Elevator = e::Elevator::init(("localhost:".to_string() + config.slave_port.to_string().as_str()).as_str(), NUMBER_OF_FLOORS as u8)
         .expect("[SLAVE]\t\tFailed to initialize elevator");
     
         let chs: inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(
