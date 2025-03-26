@@ -14,7 +14,7 @@ use std::time::Duration;
 use std::process::Command;
 use std::collections::HashMap;
 
-use crate::config::{Config, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
+use crate::config::{Config, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS, BUFFER_SIZE};
 use crate::tcp::{self, CallButton, Message};
 use crate::slave::{Direction, ElevatorState, ElevatorBehaviour};
 
@@ -475,7 +475,7 @@ fn handle_slave_connection(
     slave_to_master_tx: cbc::Sender<tcp::Message>,
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
 ) {
-    let mut buffer: [u8; 64] = [0; 64];
+    let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
     // TTL is set to 3 to avoid packages being forwarded to other networks
     stream.set_ttl(3).expect("Failed to set TTL on stream");

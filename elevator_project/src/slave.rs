@@ -305,11 +305,10 @@ impl Slave {
     /// Set the behaviour of the elevator. If the behaviour is changed, send a state update to the master.
     fn set_behaviour(&mut self, new_behaviour: ElevatorBehaviour) {
         if new_behaviour != self.state.behaviour {
+            self.state.behaviour = new_behaviour;
             if new_behaviour != ElevatorBehaviour::OutOfOrder {
-                self.state.behaviour = new_behaviour;
                 self.send_state_update();
             }
-            self.state.behaviour = new_behaviour;
         }
     }
 
@@ -477,30 +476,14 @@ impl Slave {
             /************** local operation mode ***************/
             else {
                 cbc::select! {
-                    // Receive call button message from elevator
-                    recv(self.channels.call_button_rx) -> msg => {
-                        let call_button = msg.unwrap();
-                        println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
-            
-                        // Update local cab requests
-                        if call_button.call == 2 {
-                            self.state.cab_requests[call_button.floor as usize] = true;
-                        }
-            
-                        self.sync_lights_local();
-                        
-                        match self.state.behaviour {
-                            ElevatorBehaviour::Idle => {
-                                self.start_moving_local();
-                            },
-                            _ => {},
-                        }
-                    }
-                    
                     // Receive floor sensor message from elevator
                     recv(self.channels.floor_sensor_rx) -> msg => {
                         let floor_sensor = msg.unwrap();
                         println!("[SLAVE]\t\tReceived floor sensor message: {:#?}", floor_sensor);
+
+                        start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
+                        self.timestamp_prev_floor = std::time::Instant::now();
+
                         self.state.floor = floor_sensor;
             
                         match self.state.behaviour {
@@ -521,7 +504,28 @@ impl Slave {
                             _ => {},
                         }
                     }
+
+                    // Receive call button message from elevator
+                    recv(self.channels.call_button_rx) -> msg => {
+                        let call_button = msg.unwrap();
+                        println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
+                        
             
+                        // Update local cab requests
+                        if call_button.call == 2 {
+                            self.state.cab_requests[call_button.floor as usize] = true;
+                        }
+            
+                        self.sync_lights_local();
+                        
+                        match self.state.behaviour {
+                            ElevatorBehaviour::Idle => {
+                                self.start_moving_local();
+                            },
+                            _ => {},
+                        }
+                    }
+
                     // Receive stop button message from elevator
                     recv(self.channels.stop_button_rx) -> msg => {
                         self.stop_button = msg.unwrap();
@@ -643,6 +647,9 @@ impl Slave {
         let (diraction, behaviour) = self.choose_direction();
         self.nxt_order = tcp::CallButton { floor: 1, call: CAB};
         self.state.behaviour = behaviour;
+
+        start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
+        self.timestamp_prev_floor = Instant::now();
         
         if behaviour == ElevatorBehaviour::DoorOpen {
             println!("Stopped with door open at floor {:?}", self.state.floor);

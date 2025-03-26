@@ -6,6 +6,7 @@ use std::net::TcpStream;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 use crate::tcp::{Message, ErrorState};
+use crate::config::BUFFER_SIZE;
 
 // Struct containing all the rx channels from the elevator io driver. 
 #[derive(Debug, Clone)]
@@ -94,7 +95,7 @@ pub fn spawn_thread_for_master_connection
     stream.set_ttl(3).expect("Failed to set ttl");
 
     spawn(move || {
-        let mut encoded: [u8; 64] = [0; 64];
+        let mut encoded: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
         loop {
             match slave_to_master_rx.try_recv() {
                 Ok(message) => {

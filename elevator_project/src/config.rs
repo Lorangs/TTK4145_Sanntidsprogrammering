@@ -11,6 +11,7 @@ use std::result::Result;
 // Struggled to put these in the config file due to compile time errors
 pub const NUMBER_OF_FLOORS      : usize = 4;
 pub const NUMBER_OF_ELEVATORS   : usize = 3;
+pub const BUFFER_SIZE           : usize = 128;
 
 // Custom serde module for Vec<Ipv4Addr> serialization/deserialization
 mod ipv4_address_vec {

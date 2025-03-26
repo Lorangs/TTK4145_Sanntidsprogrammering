@@ -5,7 +5,7 @@ use std::thread::{sleep, spawn};
 use std::time::Duration;
 use bincode;
 
-use crate::config::Config;
+use crate::config::{Config, BUFFER_SIZE};
 use crate::master::OrderRequests;
 use crate::tcp::{Message, ErrorState};
 
@@ -92,7 +92,7 @@ fn handle_master_connection(
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
     stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
     
-    let mut buffer: [u8; 64] = [0; 64];
+    let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
     loop {
         match stream.read(&mut buffer) {
