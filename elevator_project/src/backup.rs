@@ -33,9 +33,8 @@ impl Backup {
                             master_to_backup_rx: master_to_backup_rx,
                         };
 
-                        let tcp_timeout_ms = config.tcp_timeout_ms.clone();
                         spawn(move || {
-                            handle_master_connection(stream, master_to_backup_tx, tcp_timeout_ms)
+                            handle_master_connection(stream, master_to_backup_tx)
                         });
                         println!("[BACKUP]\tConnected to master");
                         return backup;
@@ -85,13 +84,15 @@ impl Backup {
 fn handle_master_connection(
     mut stream: TcpStream,
     master_to_backup_tx: cbc::Sender<Message>,
-    tcp_timeout_ms: u64, // Not used. Need to bee a Duration to be passed to stream.set_read_timeout()
 ) //-> Result<(), cbc::RecvError>
 {
-    let mut buffer: [u8; 1024] = [0; 1024];
-    stream
-        .set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms)))
-        .expect("Failed to set read timeout");
+
+    // TTL is set to 3 to prevent packets from being forwarded to other networks
+    stream.set_ttl(3).expect("Failed to set TTL on stream");
+    stream.set_nodelay(true).expect("Failed to set nodelay on stream");
+    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+    
+    let mut buffer: [u8; 64] = [0; 64];
 
     loop {
         match stream.read(&mut buffer) {

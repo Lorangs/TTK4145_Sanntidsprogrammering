@@ -1,4 +1,4 @@
-use elevator_project::{backup::Backup, config::Config, master::Master};
+use elevator_project::{backup::Backup, config::Config};
 use std::path::Path;
 use std::process::Command;
 
@@ -17,9 +17,6 @@ fn main() {
                 .args(["run", "--bin", "master_main", masterqueues.to_custom_json().as_str()])
                 .spawn()
                 .expect("Failed to start master_main");
-            /* let mut master = Master::init(&config, masterqueues).unwrap();
-            println!("[MASTER]\tMaster initialized");
-            master.master_loop(); */
         }
         Err(e) => {
             println!("[BACKUP]\tBackup loop failed: {:?}", e);

@@ -289,12 +289,12 @@ impl Slave {
 
     /// Send the current state of the elevator to master
     pub fn send_state_update(&mut self) {
-        let message = tcp::Message::StateUpdate(self.state.clone());
         if self.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Cannot send order.");
             return;
         }
-
+        
+        let message = tcp::Message::StateUpdate(self.state.clone());
         match self.master_channels.as_mut().unwrap().0.send(message) {
             Ok(_) => {},
             Err(e) => println!("[SLAVE]\t\tFailed to send status update: {}", e),
@@ -403,7 +403,6 @@ impl Slave {
                             println!("[SLAVE]\t\tMotor timeout. Out of order.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_state_update();
-                            return;
                         }
                     }
 
@@ -530,6 +529,7 @@ impl Slave {
                         if self.stop_button {
                             self.elevator.motor_direction(DIRN_STOP);
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                            return;
                         } 
                         else {
                             self.set_behaviour(ElevatorBehaviour::Idle);
@@ -543,6 +543,17 @@ impl Slave {
                         println!("[SLAVE]\t\tObstruction: {:#?}", obstr);
                     }
             
+                    // Receive motor timeout if the elevator has not reached a floor within the estimated moving time
+                    recv(self.motor_timeout.1) -> _msg => {
+                        if      self.timestamp_prev_floor + Duration::from_secs(self.config.est_moving_time_s) < std::time::Instant::now()
+                            &&  self.state.behaviour == ElevatorBehaviour::Moving 
+                            &&  !self.stop_button
+                        { 
+                            println!("[SLAVE]\t\tMotor timeout. Out of order.");
+                            self.set_behaviour(ElevatorBehaviour::OutOfOrder);
+                        }
+                    }
+
                     // Receive timer message
                     recv(self.door_timer.1) -> _msg => {
                         if self.obstruction {

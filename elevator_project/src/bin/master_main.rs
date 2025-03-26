@@ -1,10 +1,7 @@
 use elevator_project::config::Config;
 use elevator_project::master::{Master, OrderRequests};
-use elevator_project::backup::Backup;
-use serde_json::Map;
 use std::path::Path;
 use std::env;
-use std::io::{BufReader, Cursor};
 use std::process::Command;
 
 fn main() {

@@ -94,7 +94,7 @@ pub fn spawn_thread_for_master_connection
     stream.set_ttl(3).expect("Failed to set ttl");
 
     spawn(move || {
-        let mut encoded: [u8; 1024] = [0; 1024];
+        let mut encoded: [u8; 64] = [0; 64];
         loop {
             match slave_to_master_rx.try_recv() {
                 Ok(message) => {

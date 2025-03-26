@@ -1,9 +1,9 @@
 use crossbeam_channel as cbc;
 use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
 use serde::{Deserialize, Serialize};
-use bincode;
 use serde_json::{json, Value, Map};
 
+use bincode;
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, TcpListener, Ipv4Addr};
@@ -51,21 +51,43 @@ impl OrderRequests {
         }
     }
 
+    /// Run the optimization algorithm.
+    /// Return the next order for the slaves
     pub fn get_next_order(&mut self, slave_number: usize) -> Option<CallButton> {
-        // run the optimization algorithm
-        // return the next order for the slaves
-        let orders: HashMap<String, Vec<[bool; 3]>>;
 
-        let input = self.to_custom_json_for_hall_assigner();
+        // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
+        let hall_requests: Vec<Value> = self.hallRequests
+            .iter()
+            .map(|x| json!([x[0], x[1]]))
+            .collect();
 
+        let mut states = Map::new();
+        for (key, state) in self.states.iter().enumerate() {
+            if state.behaviour != ElevatorBehaviour::OutOfOrder {
+                let state_object = json!({
+                    "floor": state.floor,
+                    "behaviour": state.behaviour.to_ascii_lowercase(),
+                    "direction": state.direction.to_ascii_lowercase(),
+                    "cabRequests": state.cab_requests,
+                    });
+                states.insert(key.to_string(), state_object);
+            }
+        }
 
+        let result = json!({
+            "hallRequests": hall_requests,
+            "states": states,
+        }); 
+        
+        let input = serde_json::to_string(&result).unwrap();
+        
         let output = Command::new("../hall_request_assigner")
             .args(["--includeCab", "--input"])
             .arg(input)
             .output()
             .expect("Failed to start hall_request_assigner");
-        
-        
+    
+        let orders: HashMap<String, Vec<[bool; 3]>>;
         if output.status.success() {
             orders = serde_json::from_slice(&output.stdout).unwrap();
         } 
@@ -123,33 +145,6 @@ impl OrderRequests {
         return None; 
     }
     
-    pub fn to_custom_json_for_hall_assigner(&self) -> String {
-
-        // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
-        let hall_requests: Vec<Value> = self.hallRequests
-            .iter()
-            .map(|x| json!([x[0], x[1]]))
-            .collect();
-
-        let mut states = Map::new();
-        for (key, state) in self.states.iter().enumerate() {
-            if state.behaviour != ElevatorBehaviour::OutOfOrder {
-                let state_object = json!({
-                    "floor": state.floor,
-                    "behaviour": state.behaviour.to_ascii_lowercase(),
-                    "direction": state.direction.to_ascii_lowercase(),
-                    "cabRequests": state.cab_requests,
-                    });
-                states.insert(key.to_string(), state_object);
-            }
-        }
-
-        let result = json!({
-            "hallRequests": hall_requests,
-            "states": states,
-        }); 
-        serde_json::to_string(&result).unwrap()
-    }
 
     pub fn to_custom_json(&self) -> String {
         match serde_json::to_string(&self){
@@ -201,7 +196,6 @@ impl Master {
         master.try_connect_to_new_backup();
 
         let master_port             : u16 = config.master_port;
-        let tcp_timeout_ms          : u64 = config.tcp_timeout_ms;
         let ip_config_clone         : [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list.clone();
         let slave_channels_clone    : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS] >> = Arc::clone(&master.slave_channels);
         let requests_clone          : Arc<Mutex<OrderRequests>> = Arc::clone(&master.requests);
@@ -237,7 +231,7 @@ impl Master {
                             "[MASTER]\tNew slave connection established: {}",
                             stream.peer_addr().unwrap()
                         );
-                        spawn(move || handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx, tcp_timeout_ms));
+                        spawn(move || handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx));
                         
                         // send previous cab orders to slave
                         println!("[MASTER]\tSending previous orders to slave");
@@ -480,15 +474,11 @@ fn handle_slave_connection(
     mut stream: TcpStream,
     slave_to_master_tx: cbc::Sender<tcp::Message>,
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
-    tcp_timeout_ms: u64,
 ) {
-    let mut buffer: [u8; 1024] = [0; 1024];
+    let mut buffer: [u8; 64] = [0; 64];
 
-    //stream.set_read_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set read timeout on stream");
-    //stream.set_write_timeout(Some(Duration::from_millis(tcp_timeout_ms))).expect("Failed to set write timeout on stream");
-
+    // TTL is set to 3 to avoid packages being forwarded to other networks
     stream.set_ttl(3).expect("Failed to set TTL on stream");
-
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
     stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
 
@@ -536,14 +526,19 @@ fn handle_backup_connection(
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
     backup_disconected_tx: cbc::Sender<bool>,
 ) {
-
+    // TTL is set to 3 to avoid packages being forwarded to other networks
+    stream.set_ttl(3).expect("Failed to set TTL on stream");
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
+    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+
     loop {
         match master_to_backup_rx.recv() {
             Ok(message) => {
                 let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
                 match stream.write(&encoded){
-                    Ok(_)=>{println!("[MASTER]\tSent order to backup: {:#?}", message);}
+                    Ok(_)=>{
+                        println!("[MASTER]\tSent order to backup: {:#?}", message);
+                    }
                     Err(_)=>{
                         eprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
                         backup_disconected_tx.send(true).unwrap(); 
