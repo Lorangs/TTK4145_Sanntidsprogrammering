@@ -96,7 +96,7 @@ pub struct Slave {
     door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
     motor_timeout   : (cbc::Sender<bool>, cbc::Receiver<bool>),
     timestamp_prev_floor: Instant,
-    light_matrix    : [[bool; 3]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN, CAB_CALL for each floor
+    light_matrix    : [[bool; 2]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN for each floor
 }
 
 impl Slave {
@@ -122,11 +122,12 @@ impl Slave {
             door_timer          : cbc::unbounded::<bool>(),
             motor_timeout       : cbc::unbounded::<bool>(),
             timestamp_prev_floor: Instant::now(),
-            light_matrix        : [[false; 3]; NUMBER_OF_FLOORS],
+            light_matrix        : [[false; 2]; NUMBER_OF_FLOORS],
         };
         
         // Turns all lights off
-        slave.sync_lights_normal();
+        slave.sync_hall_lights();
+        slave.sync_cab_lights();
         slave.elevator.door_light(false);
 
         // Initiate elevator position and lights to the nearest floor in downwards direction
@@ -183,7 +184,7 @@ impl Slave {
     }
 
     // Poll light information from dirver and update light_matrix
-    fn sync_lights_normal(&self) {
+    fn sync_hall_lights(&self) {
         println!("[SLAVE]\t\tSyncing lights");
         for (floor_index, light_array) in self.light_matrix.iter().enumerate() {
             let floor = floor_index as u8;
@@ -191,8 +192,13 @@ impl Slave {
                 .call_button_light(floor, HALL_UP, light_array[0]);
             self.elevator
                 .call_button_light(floor, HALL_DOWN, light_array[1]);
-            self.elevator
-                .call_button_light(floor, CAB, light_array[2]);
+        }
+    }
+
+
+    fn sync_cab_lights(&self) {
+        for (floor, order) in self.state.cab_requests.iter().enumerate() {
+            self.elevator.call_button_light(floor as u8, e::CAB,        *order);
         }
     }
 
@@ -222,6 +228,7 @@ impl Slave {
             2 => {
                 self.state.cab_requests[callbutton.floor as usize] = true;
                 self.send_state_update();
+                self.sync_cab_lights(); //litt smartare
             },
             _ => panic!("Mottok ukjent knappetype"),
         }
@@ -230,8 +237,9 @@ impl Slave {
     fn send_order_complete(&mut self) {
         self.state.cab_requests[self.state.floor as usize]   = false;
         self.send_state_update();
+        self.sync_cab_lights();
 
-         if self.nxt_order.call != CAB{
+        if self.nxt_order.call != CAB{
             let message = tcp::Message::OrderComplete(self.nxt_order);
             
             if self.master_channels.is_none() {
@@ -432,7 +440,7 @@ impl Slave {
                             tcp::Message::LightMatrix(matrix) => {
                                 self.light_matrix = matrix;
                                 //println!("[SLAVE]\t\tReceived light matrix");
-                                self.sync_lights_normal();
+                                self.sync_hall_lights();
                             },
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
                             tcp::Message::StateUpdate(state) => {     
@@ -455,7 +463,6 @@ impl Slave {
                                     self.elevator.call_button_light(i as u8, HALL_DOWN, false);
                                 }
                                 if self.state.behaviour == ElevatorBehaviour::Idle{ 
-                                    self.sync_lights_local();
                                     self.start_moving_local();
                                 }
                 
@@ -495,7 +502,7 @@ impl Slave {
                                     self.set_behaviour(ElevatorBehaviour::DoorOpen);
                                     self.elevator.door_light(true);
                                     self.clear_at_current_floor();
-                                    self.sync_lights_local();
+                                    self.sync_cab_lights();
                                     self.elevator.motor_direction(DIRN_STOP);
             
                                     start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);    // starting doortimer
@@ -516,7 +523,7 @@ impl Slave {
                             self.state.cab_requests[call_button.floor as usize] = true;
                         }
             
-                        self.sync_lights_local();
+                        self.sync_cab_lights();
                         
                         match self.state.behaviour {
                             ElevatorBehaviour::Idle => {
@@ -654,7 +661,7 @@ impl Slave {
         if behaviour == ElevatorBehaviour::DoorOpen {
             println!("Stopped with door open at floor {:?}", self.state.floor);
             self.clear_at_current_floor(); //den opna ikkje døra når den fikk order i samme etasje so de va, so la til 2 linje som fiksa det
-            self.sync_lights_local();
+            self.sync_cab_lights();
             self.elevator.door_light(true);
             start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
         }
@@ -672,13 +679,6 @@ impl Slave {
                 self.elevator.motor_direction(DIRN_STOP);
                 self.state.direction = Direction::Stop;
             },
-        }
-    }
-
-    
-    fn sync_lights_local(&self) {
-        for (floor, order) in self.state.cab_requests.iter().enumerate() {
-            self.elevator.call_button_light(floor as u8, e::CAB,        *order);
         }
     }
 }

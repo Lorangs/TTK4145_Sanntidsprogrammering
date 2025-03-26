@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, TcpListener, Ipv4Addr};
 use std::string::String;
 use std::sync::{Arc, Mutex};
-use std::thread::spawn;
+use std::thread::{sleep, spawn};
 use std::time::Duration;
 use std::process::Command;
 use std::collections::HashMap;
@@ -253,10 +253,10 @@ impl Master {
     Ok(master)
     }
 
-    // Returns a 3 x num_floors matrix for updating panel lights. 
-    // 3 x num_floors matrix for [hall up, hall down, cab] lights.
+    // Returns a 2 x num_floors matrix for updating panel lights. 
+    // 2 x num_floors matrix for [hall up, hall down] lights.
     fn make_light_matrix(&self, slave_number: usize, requests: OrderRequests) -> tcp::Message {
-        let mut new_matrix = [[false; 3]; NUMBER_OF_FLOORS];
+        let mut new_matrix = [[false; 2]; NUMBER_OF_FLOORS];
 
         for (floor, hall_call) in requests.hallRequests.iter().enumerate() {
             match hall_call {
@@ -273,13 +273,7 @@ impl Master {
                 }
             }
         }
-        if requests.states[slave_number].behaviour != ElevatorBehaviour::OutOfOrder {
-            for (floor, cab_call)  in requests.states[slave_number].cab_requests.iter().enumerate() {
-                if *cab_call {
-                    new_matrix[floor][2] = true;
-                }
-            }
-        }
+        
         Message::LightMatrix(new_matrix)
     }
 
@@ -379,7 +373,7 @@ impl Master {
                                 }
                                 println!("[MASTER]\tNew state update from slave:\t{}", new_state);
 
-                                
+                            
                                 let nxt_order = locked_requests.get_next_order(slave_number);
                                 match nxt_order {
                                     Some(_) => {
@@ -394,6 +388,7 @@ impl Master {
                                         println!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
                                     }
                                 }
+
                             }
 
                             // Removes an disconected slave

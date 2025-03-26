@@ -20,7 +20,7 @@ impl FmtDisplay for CallButton {
 pub enum Message {
     NewOrder(CallButton),
     OrderComplete(CallButton),
-    LightMatrix([[bool; 3]; NUMBER_OF_FLOORS]), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
+    LightMatrix([[bool; 2]; NUMBER_OF_FLOORS]), // Hall_UP, Hall_DOWN, CAB_CALL for each floor. 
     Error(ErrorState),
     Backup(OrderRequests),
     StateUpdate(ElevatorState),
