@@ -101,7 +101,7 @@ pub fn spawn_thread_for_master_connection
         loop {
             match slave_to_master_rx.try_recv() {
                 Ok(message) => {
-                    let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message");
+                    let encoded = bincode::serialize(&message).expect("Failed to serialize message");
                     match stream.write(&encoded) {
                         Ok(_) => {
                             dprintln!("[SLAVE]\t\tSent message to master: {:#?}", message);
@@ -121,7 +121,7 @@ pub fn spawn_thread_for_master_connection
             match stream.read(&mut encoded) {
                 Ok(size) => {
                     if size > 0 {
-                        let msg: Message = bincode::deserialize::<Message>(&encoded).expect("Failed to deserialize message");
+                        let msg: Message = bincode::deserialize::<Message>(&encoded[..size]).expect("Failed to deserialize message");
                         dprintln!("[SLAVE]\t\tReceived message from master: {:#?}", msg);
                         master_to_slave_tx.send(msg).unwrap();
                     }

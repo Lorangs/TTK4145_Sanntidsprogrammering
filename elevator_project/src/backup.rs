@@ -100,7 +100,7 @@ fn handle_master_connection(
         match stream.read(&mut buffer) {
             Ok(size) => {
                 if size > 0 {
-                    let msg: Message = bincode::deserialize::<Message>(&buffer).expect("Failed to deserialize message");
+                    let msg: Message = bincode::deserialize::<Message>(&buffer[..size]).expect("Failed to deserialize message");
                     dprintln!("[BACKUP]\tReceived message from master: {:#?}", msg);
                     master_to_backup_tx.send(msg).unwrap();
                 }
