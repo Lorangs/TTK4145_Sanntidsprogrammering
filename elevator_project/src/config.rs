@@ -6,6 +6,8 @@ use std::io::{BufReader, Error};
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::result::Result;
+use debug_print::debug_println as dprintln;
+
 
 // constants variables for the elevator system
 // Struggled to put these in the config file due to compile time errors
@@ -104,7 +106,7 @@ impl Display for Config {
 
 impl Config {
     pub fn read_config(path: &Path) -> Result<Config, Error> {
-        println!("[CONFIG]\tReading config file");
+        dprintln!("[CONFIG]\tReading config file");
         let file = match File::open(path) {
             Ok(file) => file,
             Err(e) => {
@@ -114,7 +116,7 @@ impl Config {
         let reader = BufReader::new(file);
         let config: Config = serde_json::from_reader(reader)?;
 
-        println!("[CONFIG]\tConfig loaded successfully:\n{}", config);
+        dprintln!("[CONFIG]\tConfig loaded successfully:\n{}", config);
         return Ok(config);
     }
 }

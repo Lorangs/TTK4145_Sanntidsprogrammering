@@ -4,6 +4,7 @@ use crate::config::NUMBER_OF_FLOORS;
 use crate::slave::ElevatorState;
 use crate::master::OrderRequests;
 
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct CallButton {
     pub floor: u8,

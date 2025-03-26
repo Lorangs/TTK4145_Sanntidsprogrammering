@@ -4,6 +4,8 @@ use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 use bincode;
+use debug_print::debug_println as dprintln;
+
 
 use crate::config::{Config, BUFFER_SIZE};
 use crate::master::OrderRequests;
@@ -17,7 +19,7 @@ pub struct Backup {
 impl Backup {
     // Loops unitl it connects to a master
     pub fn init(config: &Config) -> Backup {
-        println!("[BACKUP]\tInitializing backup");
+        dprintln!("[BACKUP]\tInitializing backup");
 
         loop {
             let listener: TcpListener = TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string())
@@ -36,11 +38,11 @@ impl Backup {
                         spawn(move || {
                             handle_master_connection(stream, master_to_backup_tx)
                         });
-                        println!("[BACKUP]\tConnected to master");
+                        dprintln!("[BACKUP]\tConnected to master");
                         return backup;
                     }
                     Err(e) => {
-                        println!("Error: {}", e);
+                        dprintln!("Error: {}", e);
                         sleep(Duration::from_secs(2));
                     }
                 }
@@ -57,17 +59,17 @@ impl Backup {
                     match message {
                         Message::Backup(data) => {
                             self.orders = data;
-                            println!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
+                            dprintln!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
                         }
                         Message::Error(ErrorState::Network) => {
-                            println!("[BACKUP]\tMaster disconnected");
+                            dprintln!("[BACKUP]\tMaster disconnected");
                             return Ok(self.orders.clone());
                         }
                         _ => {} // Do nothing for other types of incoming messages.
                     }
                 }
                 Err(cbc::RecvError) => {
-                    println!("[BACKUP]\tMaster disconnected");
+                    dprintln!("[BACKUP]\tMaster disconnected");
 
                     // try sending error state to master so that master can initilize an other backup.
                     // if not possible, return orders and inititize self as new master.
@@ -99,11 +101,11 @@ fn handle_master_connection(
             Ok(size) => {
                 if size > 0 {
                     let msg: Message = bincode::deserialize::<Message>(&buffer).expect("Failed to deserialize message");
-                    println!("[BACKUP]\tReceived message from master: {:#?}", msg);
+                    dprintln!("[BACKUP]\tReceived message from master: {:#?}", msg);
                     master_to_backup_tx.send(msg).unwrap();
                 }
                 else{ //e dinna so blir utført vist eg drepe master
-                    println!("[BACKUP]\tLost conection to master");
+                    dprintln!("[BACKUP]\tLost conection to master");
                     let msg = Message::Error(ErrorState::Network);
                     master_to_backup_tx.send(msg).unwrap();
                     break;
@@ -115,7 +117,7 @@ fn handle_master_connection(
                     continue;
                 } else {
                     // Connection lost or other error
-                    println!("[BACKUP]\tError: {}", e);
+                    dprintln!("[BACKUP]\tError: {}", e);
                     let msg = Message::Error(ErrorState::Network);
                     master_to_backup_tx.send(msg).unwrap();
                     break;
