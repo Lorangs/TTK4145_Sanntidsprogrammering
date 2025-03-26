@@ -49,7 +49,7 @@ impl Direction {
         match self {
             Direction::Down => "down",
             Direction::Stop => "stop",
-            Direction::Up => "up",
+            Direction::Up   => "up",
         }
     }
 }
@@ -87,18 +87,18 @@ impl Display for ElevatorState {
 
 #[derive(Debug)]
 pub struct Slave {
-    pub config      : Config,
-    pub elevator    : e::Elevator,
-    pub state       : ElevatorState,
-    obstruction     : bool,
-    stop_button     : bool,
-    nxt_order       : tcp::CallButton,
-    channels        : inputs::SlaveChannels,
-    master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
-    door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
-    motor_timeout   : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    pub config          : Config,
+    pub elevator        : e::Elevator,
+    pub state           : ElevatorState,
+    obstruction         : bool,
+    stop_button         : bool,
+    nxt_order           : tcp::CallButton,
+    channels            : inputs::SlaveChannels,
+    master_channels     : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
+    door_timer          : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    motor_timeout       : (cbc::Sender<bool>, cbc::Receiver<bool>),
     timestamp_prev_floor: Instant,
-    light_matrix    : [[bool; 2]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN for each floor
+    light_matrix        : [[bool; 2]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN for each floor
 }
 
 impl Slave {
@@ -396,7 +396,6 @@ impl Slave {
                             dprintln!("[SLAVE]\t\tTimer expired. Door closing.");
                             self.elevator.door_light(false);
                             self.set_behaviour(ElevatorBehaviour::Idle);
-                          //self.send_order_complete();
                         }
                     }
 
@@ -429,7 +428,6 @@ impl Slave {
                                     }
                                     else {
                                         self.start_moving_normal();
-
                                     }
                                 }
                                 else {

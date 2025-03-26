@@ -27,7 +27,6 @@ pub enum Message {
     StateUpdate(ElevatorState),
 }
 
-
 impl FmtDisplay for Message {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
