@@ -347,8 +347,6 @@ impl Slave {
                             self.send_order_complete();
                             start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s); 
                         }
-
-
                     }
 
                     // Receive call buttons from elevator
@@ -512,21 +510,20 @@ impl Slave {
                     // Receive call button message from elevator
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
-                        println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
-                        
-            
-                        // Update local cab requests
+                                                
+                        // Update only local cab requests in local operation mode
                         if call_button.call == 2 {
+                            println!("[SLAVE]\t\tReceived call button message: {:#?}", call_button);
                             self.state.cab_requests[call_button.floor as usize] = true;
-                        }
-            
-                        self.sync_cab_lights();
-                        
-                        match self.state.behaviour {
-                            ElevatorBehaviour::Idle => {
-                                self.start_moving_local();
-                            },
-                            _ => {},
+
+                            self.sync_cab_lights();
+                            
+                            match self.state.behaviour {
+                                ElevatorBehaviour::Idle => {
+                                    self.start_moving_local();
+                                },
+                                _ => {},
+                            }
                         }
                     }
 

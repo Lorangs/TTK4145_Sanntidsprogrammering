@@ -100,6 +100,7 @@ pub fn spawn_thread_for_master_connection
             match slave_to_master_rx.try_recv() {
                 Ok(message) => {
                     let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message");
+                    stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout");
                     match stream.write(&encoded) {
                         Ok(_) => {
                             println!("[SLAVE]\t\tSent message to master: {:#?}", message);
