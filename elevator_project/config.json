@@ -10,5 +10,6 @@
     "door_open_duration_s"  : 3,
     "input_poll_rate_ms"    : 25,
     "tcp_timeout_ms"        : 1000,
-    "est_moving_time_s"     : 4 
+    "est_moving_time_s"     : 4,
+    "heartbeat_s"           : 4
 }

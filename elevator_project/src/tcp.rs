@@ -24,6 +24,7 @@ pub enum Message {
     Error(ErrorState),
     Backup(OrderRequests),
     StateUpdate(ElevatorState),
+    HeartBeat,
 }
 
 
@@ -36,6 +37,7 @@ impl FmtDisplay for Message {
             Message::Error(id) => write!(f, "Error: {}", id),
             Message::Backup(b) => write!(f, "Backup: {:#?}", b),
             Message::StateUpdate(state) => write!(f, "State update: {}", state),
+            Message::HeartBeat => write!(f, "Heartbeat")
         }
     }
 }

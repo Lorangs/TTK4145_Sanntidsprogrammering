@@ -7,8 +7,8 @@ use std::net::TcpStream;
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
 use crate::config::{Config, NUMBER_OF_FLOORS};
-use crate::inputs;
-use crate::tcp;
+use crate::inputs::{self, start_timer};
+use crate::tcp::{Message, CallButton, ErrorState};
 
 // struct for orders in local operation mode
 #[derive(Debug, Clone, Copy)]
@@ -85,18 +85,19 @@ impl Display for ElevatorState {
 
 #[derive(Debug)]
 pub struct Slave {
-    pub config      : Config,
-    pub elevator    : e::Elevator,
-    pub state       : ElevatorState,
-    obstruction     : bool,
-    stop_button     : bool,
-    nxt_order       : tcp::CallButton,
-    channels        : inputs::SlaveChannels,
-    master_channels : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
-    door_timer      : (cbc::Sender<bool>, cbc::Receiver<bool>),
-    motor_timeout   : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    pub config          : Config,
+    pub elevator        : e::Elevator,
+    pub state           : ElevatorState,
+    obstruction         : bool,
+    stop_button         : bool,
+    nxt_order           : CallButton,
+    channels            : inputs::SlaveChannels,
+    master_channels     : Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>,     // If none, the elevator is in local mode
+    door_timer          : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    motor_timeout       : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    light_matrix        : [[bool; 2]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN for each floor
     timestamp_prev_floor: Instant,
-    light_matrix    : [[bool; 2]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN for each floor
+    timestamp_master_hb : Instant,
 }
 
 impl Slave {
@@ -113,7 +114,7 @@ impl Slave {
         let mut slave = Self {
             config: conf,
             elevator: elev,
-            nxt_order           : tcp::CallButton { floor: 0, call: 0 },
+            nxt_order           : CallButton { floor: 0, call: 0 },
             state               : ElevatorState::init(),
             obstruction         : false,
             stop_button         : false,
@@ -121,8 +122,9 @@ impl Slave {
             master_channels     : None,
             door_timer          : cbc::unbounded::<bool>(),
             motor_timeout       : cbc::unbounded::<bool>(),
-            timestamp_prev_floor: Instant::now(),
             light_matrix        : [[false; 2]; NUMBER_OF_FLOORS],
+            timestamp_prev_floor: Instant::now(),
+            timestamp_master_hb : Instant::now(),
         };
         
         // Turns all lights off
@@ -203,8 +205,8 @@ impl Slave {
     }
 
 
-    fn send_new_order(&mut self, callbutton: tcp::CallButton) {
-        let message = tcp::Message::NewOrder(callbutton.clone());
+    fn send_new_order(&mut self, callbutton: CallButton) {
+        let message = Message::NewOrder(callbutton.clone());
 
         if self.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -240,7 +242,7 @@ impl Slave {
         self.sync_cab_lights();
 
         if self.nxt_order.call != CAB{
-            let message = tcp::Message::OrderComplete(self.nxt_order);
+            let message = Message::OrderComplete(self.nxt_order);
             
             if self.master_channels.is_none() {
                 println!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -256,7 +258,7 @@ impl Slave {
 
     /// Send emergancy stop message to master
     fn send_stop_button(&mut self) {
-        let message = tcp::Message::Error(tcp::ErrorState::EmergancyStop);
+        let message = Message::Error(ErrorState::EmergancyStop);
 
         if self.master_channels.is_none() {
             println!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -302,7 +304,7 @@ impl Slave {
             return;
         }
         
-        let message = tcp::Message::StateUpdate(self.state.clone());
+        let message = Message::StateUpdate(self.state.clone());
         match self.master_channels.as_mut().unwrap().0.send(message) {
             Ok(_) => {},
             Err(e) => println!("[SLAVE]\t\tFailed to send status update: {}", e),
@@ -352,7 +354,7 @@ impl Slave {
                     // Receive call buttons from elevator
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
-                        let new_call = tcp::CallButton { floor: call_button.floor, call: call_button.call };
+                        let new_call = CallButton { floor: call_button.floor, call: call_button.call };
                         println!("[SLAVE]\t\tReceived call button message: {:#?}", new_call);
                         self.send_new_order(new_call);
                     }
@@ -412,7 +414,7 @@ impl Slave {
                     recv(self.master_channels.clone().unwrap().1) -> msg => {
                         let message = msg.unwrap();
                         match message {
-                            tcp::Message::NewOrder(callbutton) => {
+                            Message::NewOrder(callbutton) => {
                                 if self.state.behaviour == ElevatorBehaviour::Idle { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
                                     self.nxt_order = callbutton.clone();
                                     //println!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
@@ -432,13 +434,13 @@ impl Slave {
                                    println!("[SLAVE]\t\tReceived new order, but elevator is not idle");
                                 }
                             },
-                            tcp::Message::LightMatrix(matrix) => {
+                            Message::LightMatrix(matrix) => {
                                 self.light_matrix = matrix;
                                 //println!("[SLAVE]\t\tReceived light matrix");
                                 self.sync_hall_lights();
                             },
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
-                            tcp::Message::StateUpdate(state) => {     
+                            Message::StateUpdate(state) => {     
                                 for i in 0..NUMBER_OF_FLOORS {
                                     if state.cab_requests[i] {
                                         self.state.cab_requests[i] = state.cab_requests[i]; //sånn at den behelde dei ordrane den hadde i localt modus
@@ -447,7 +449,11 @@ impl Slave {
                                 self.send_state_update();
                                 //println!("[SLAVE]\t\tReceived state update");
                             },
-                            tcp::Message::Error(_) => { 
+                            // Reset the master HeartBeat timer
+                            Message::HeartBeat => {
+                                self.timestamp_master_hb = Instant::now();
+                            }
+                            Message::Error(_) => { 
                                 println!("[SLAVE]\t\tReceived error message from master"); 
                                 println!("[SLAVE]\t\tStarting in local operating mode");
                                 self.master_channels = None;
@@ -468,6 +474,11 @@ impl Slave {
                     default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
                         if self.state.behaviour == ElevatorBehaviour::Idle {
                             self.send_state_update();
+                        }
+
+                        // check if master heartbeat has overrun the set time
+                        if self.timestamp_master_hb + Duration::from_secs(self.config.heartbeat_s) < Instant::now() {
+                            
                         }
                     }
                 }// cbc::select
@@ -582,7 +593,7 @@ impl Slave {
     fn orders_above(&mut self) -> bool{
         for floor in (self.state.floor + 1) .. NUMBER_OF_FLOORS as u8 {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = tcp::CallButton { floor: floor, call: CAB};
+                self.nxt_order = CallButton { floor: floor, call: CAB};
                 return true;
             }
         }
@@ -592,7 +603,7 @@ impl Slave {
     fn orders_below(&mut self) -> bool {
         for floor in 0 .. self.state.floor {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = tcp::CallButton { floor: floor, call: CAB};
+                self.nxt_order = CallButton { floor: floor, call: CAB};
                 return true;
             }  
         }
@@ -646,7 +657,7 @@ impl Slave {
 
     fn start_moving_local(&mut self) {
         let (diraction, behaviour) = self.choose_direction();
-        self.nxt_order = tcp::CallButton { floor: 1, call: CAB};
+        self.nxt_order = CallButton { floor: 1, call: CAB};
         self.state.behaviour = behaviour;
 
         start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
@@ -700,10 +711,3 @@ impl Display for Slave {
 }
 
 
-// Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel when done. 
-fn start_timer(tx: cbc::Sender<bool>, duration: u64) {
-    spawn(move || {
-        sleep(Duration::from_secs(duration));
-        let _ = tx.send(true).unwrap();
-    });
-}

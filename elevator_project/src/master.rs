@@ -236,26 +236,44 @@ impl Master {
                         // send previous cab orders to slave
                         println!("[MASTER]\tSending previous orders to slave");
                         locked_channel[slave_number]
-                        .as_ref()
-                        .unwrap()
-                        .0
-                        .send(Message::StateUpdate(locked_requests.states[slave_number]))
-                        .unwrap();
-                    drop(locked_requests);
-                    drop(locked_channel);
-                },
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .send(Message::StateUpdate(locked_requests.states[slave_number]))
+                            .unwrap();
+                        drop(locked_requests);
+                        drop(locked_channel);
+                    },
                 Err(_) => {
                     eprintln!("[MASTER]\tFailed to establish connection to slave");
+                    }
                 }
             }
-        }
-    });
-    Ok(master)
+        });
+
+        // spawn thread for sending heartbeats to connected slaves and backup
+        let slave_channels_clone = master.slave_channels.clone();
+        spawn(move || {
+            loop {
+                sleep(Duration::from_secs(master.config.heartbeat_s));
+                let locked_channels = slave_channels_clone.lock().unwrap();
+                for channel in locked_channels.iter() {
+                    match channel {
+                        Some(channel) => {
+                            channel.0.send(Message::HeartBeat).unwrap();
+                        },
+                        None => {}
+                    }
+                }
+            }
+        });
+
+        Ok(master)
     }
 
     // Returns a 2 x num_floors matrix for updating panel lights. 
     // 2 x num_floors matrix for [hall up, hall down] lights.
-    fn make_light_matrix(&self, slave_number: usize, requests: OrderRequests) -> tcp::Message {
+    fn make_light_matrix(&self, requests: OrderRequests) -> tcp::Message {
         let mut new_matrix = [[false; 2]; NUMBER_OF_FLOORS];
 
         for (floor, hall_call) in requests.hallRequests.iter().enumerate() {
@@ -331,7 +349,7 @@ impl Master {
                                     if locked_channels[i].is_none() {
                                         continue;
                                     }
-                                    let light_matrix = self.make_light_matrix(i, locked_requests.clone());
+                                    let light_matrix = self.make_light_matrix(locked_requests.clone());
                                     locked_channels[i].clone().unwrap()
                                         .0
                                         .send(light_matrix)
@@ -351,7 +369,7 @@ impl Master {
 
                                 for i in 0..NUMBER_OF_ELEVATORS {
                                     if locked_channels[i].is_some() {
-                                        let light_matrix = self.make_light_matrix(i, locked_requests.clone());
+                                        let light_matrix = self.make_light_matrix(locked_requests.clone());
                                         locked_channels[i].clone().unwrap()
                                             .0
                                             .send(light_matrix)
@@ -429,9 +447,6 @@ impl Master {
                     Err(_) => {}
                 }
             }
-
-            //Add a very small sleep to avoid consuming 100% CPU
-            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
     

@@ -100,8 +100,9 @@ pub fn spawn_thread_for_master_connection
             match slave_to_master_rx.try_recv() {
                 Ok(message) => {
                     let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message");
-                    stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout");
-                    match stream.write(&encoded) {
+
+          
+                    match stream.write_all(&encoded) {
                         Ok(_) => {
                             println!("[SLAVE]\t\tSent message to master: {:#?}", message);
                         }
@@ -145,4 +146,12 @@ pub fn spawn_thread_for_master_connection
         }
     });
     (slave_to_master_tx, master_to_slave_rx)
+}
+
+// Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel when done. 
+pub fn start_timer(tx: cbc::Sender<bool>, duration: u64) {
+    spawn(move || {
+        sleep(Duration::from_secs(duration));
+        let _ = tx.send(true).unwrap();
+    });
 }

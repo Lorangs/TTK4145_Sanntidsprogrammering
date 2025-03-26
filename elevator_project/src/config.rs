@@ -75,7 +75,8 @@ pub struct Config {
     pub door_open_duration_s    : u64,
     pub input_poll_rate_ms      : u64,
     pub tcp_timeout_ms          : u64,
-    pub est_moving_time_s       : u64 
+    pub est_moving_time_s       : u64,
+    pub heartbeat_s             : u64
 }
 
 impl Display for Config {
@@ -89,7 +90,8 @@ impl Display for Config {
             Door open duration [s]:\t\t{}\n\
             Input poll rate [ms]:\t\t{}\n\
             TCP timeout [ms]:\t\t{}
-            Estimated moving time [s]:\t{}",
+            Estimated moving time [s]:\t{}
+            Heartbeat [s]:\t{}",
             self.elevator_ip_list,
             self.master_port,
             self.backup_port,
@@ -97,7 +99,8 @@ impl Display for Config {
             self.door_open_duration_s,
             self.input_poll_rate_ms,
             self.tcp_timeout_ms,
-            self.est_moving_time_s
+            self.est_moving_time_s,
+            self.heartbeat_s
         )
     }
 }
