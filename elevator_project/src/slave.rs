@@ -93,7 +93,11 @@ impl Display for ElevatorState {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
-            "\n\tBehaviour:\t{}\n\tFloor:\t{}\n\tDirectoin:\t{}\n\tCabRequests:\t{:?}",
+            "ElevatorState:\n\t
+            Behaviour:\t{}\n\t
+            Floor:\t\t{}\n\t
+            Directoin:\t{}\n\t
+            CabRequests:\t{:?}",
             self.behaviour,
             self.floor,
             self.direction,

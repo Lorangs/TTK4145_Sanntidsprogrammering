@@ -174,16 +174,15 @@ impl OrderRequests {
         }
     }
 }
-
-
-
 impl FmtDisplay for OrderRequests {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         write!(
             f,
-            "Hall queue: {:?}\n\
-            Cab queues: {:?}",
-            self.hall_requests, self.states
+            "OrderRequests:\n\t
+            Hall queue:\t{:?}\n\t
+            Cab queues:\t{:?}",
+            self.hall_requests, 
+            self.states
         )
     }
 }
@@ -191,13 +190,15 @@ impl FmtDisplay for OrderRequests {
 #[derive(Debug)]
 pub struct Master {
     pub config                      : Config,                                                                     
-    pub requests                    : Arc<Mutex<OrderRequests>>,                                          // Vector of slaves order queues
-    slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS ]>>,   // Vector of slave channels.
-    master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      // Channel for sending messages to backup
-    backup_disconected_rx           : cbc::Receiver<bool>,                                               // Channel for sending messages to backup
+    pub requests                    : Arc<Mutex<OrderRequests>>,                                         
+    slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>>,   
+    master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      
+    backup_disconected_rx           : cbc::Receiver<bool>,                                               
 }
 
 impl Master {
+
+    /// Initialize the a new master unit.
     pub fn init
     (
         config: &Config, 
@@ -250,7 +251,8 @@ impl Master {
                             "[MASTER]\tNew slave connection established: {}",
                             stream.peer_addr().unwrap()
                         );
-                        spawn(move || handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx));
+
+                        spawn_thread_for_slave_connection(stream, slave_to_master_tx, master_to_slave_rx);
                         
                         // send previous cab orders to slave
                         dprintln!("[MASTER]\tSending previous orders to slave");
@@ -272,8 +274,7 @@ impl Master {
     Ok(master)
     }
 
-    // Returns a 2 x num_floors matrix for updating panel lights. 
-    // 2 x num_floors matrix for [hall up, hall down] lights.
+    /// Returns a 2 x num_floors matrix for updating panel lights. [hall_up, hall_down]
     fn make_light_matrix(&self, requests: OrderRequests) -> tcp::Message {
         let mut new_matrix = [[false; 2]; NUMBER_OF_FLOORS];
 
@@ -296,6 +297,7 @@ impl Master {
         Message::LightMatrix(new_matrix)
     }
 
+    /// Sends the updated order requests to the backup server.
     fn update_backup(&self, requests: OrderRequests) -> Result<(), tcp::ErrorState>{
         if self.master_to_backup_tx.is_some() {
             match self.master_to_backup_tx.as_ref().unwrap().send(Message::Backup(requests)) {
@@ -313,7 +315,7 @@ impl Master {
         return Err(tcp::ErrorState::Network);
     }
 
-    // Main application loop for master (state machine). Should be refactored to be more readable.
+    /// Main application loop for master (state machine).
     pub fn master_loop(&mut self) {
         loop {
             if self.backup_disconected_rx.try_recv().is_ok() {
@@ -454,6 +456,7 @@ impl Master {
         }
     }
     
+    /// Tries to connect to a new backup server. If connection is found, a new backup channel is set. If no connection is found, the function will try again in the next iteration.
     fn try_connect_to_new_backup(&mut self) {
         let backup_ip_list: Vec<SocketAddr> = self.config
             .elevator_ip_list
@@ -469,7 +472,7 @@ impl Master {
                     let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
                     let (backup_disconected_tx, backup_disconected_rx) = cbc::unbounded();
 
-                    spawn(|| handle_backup_connection(backup_socket, master_to_backup_rx,backup_disconected_tx));
+                    spawn_thread_for_backup_connection(backup_socket, master_to_backup_rx,backup_disconected_tx);
     
                     dprintln!("[MASTER]\tConnected to backup at {}", backup_ip);
                     self.master_to_backup_tx = Some(master_to_backup_tx);
@@ -483,8 +486,8 @@ impl Master {
 }
 
 
-// Handles the individual slave connections
-fn handle_slave_connection(
+/// Spawns a thread for handling the TcpStream connection to a slave.
+fn spawn_thread_for_slave_connection(
     mut stream: TcpStream,
     slave_to_master_tx: cbc::Sender<tcp::Message>,
     master_to_slave_rx: cbc::Receiver<tcp::Message>,
@@ -496,46 +499,49 @@ fn handle_slave_connection(
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
     stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
 
-    loop {
-        match stream.read(&mut buffer) {
-            Ok(size) => {
-                if size > 0 {
-                    let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
-                        .expect("[MASTER]\tFailed to deserialize message from slave");
-                    slave_to_master_tx.send(msg).unwrap();
-                }
-            }
-            Err(e) => {
-                match e.kind() {
-                    std::io::ErrorKind::WouldBlock => {  }
-                    _ => {
-                        dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
-                        slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+    spawn(move || {
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(size) => {
+                    if size > 0 {
+                        let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
+                            .expect("[MASTER]\tFailed to deserialize message from slave");
+                        slave_to_master_tx.send(msg).unwrap();
                     }
                 }
-
-            }
-        }
-
-        match master_to_slave_rx.try_recv() {
-            Ok(message) => {
-                let encoded: Vec<u8> =
-                    bincode::serialize(&message).expect("Failed to serialize message to slave");
-                match stream.write(&encoded) {
-                    Ok(_) => {},
-                    Err(_e) => {
-                        slave_to_master_tx.send(Message::Error(tcp::ErrorState::Network)).unwrap();
+                Err(e) => {
+                    match e.kind() {
+                        std::io::ErrorKind::WouldBlock => {  }
+                        _ => {
+                            dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
+                            slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                        }
                     }
+
                 }
             }
-            Err(_e) => {
-                continue;
+
+            match master_to_slave_rx.try_recv() {
+                Ok(message) => {
+                    let encoded: Vec<u8> =
+                        bincode::serialize(&message).expect("Failed to serialize message to slave");
+                    match stream.write(&encoded) {
+                        Ok(_) => {},
+                        Err(_e) => {
+                            slave_to_master_tx.send(Message::Error(tcp::ErrorState::Network)).unwrap();
+                        }
+                    }
+                }
+                Err(_e) => {
+                    continue;
+                }
             }
         }
-    }
+    });
 }
 
-fn handle_backup_connection(
+/// Spawns a thread for handling the TcpStream connection to a backup.
+fn spawn_thread_for_backup_connection(
     mut stream: TcpStream,
     master_to_backup_rx: cbc::Receiver<tcp::Message>,
     backup_disconected_tx: cbc::Sender<bool>,
@@ -545,26 +551,28 @@ fn handle_backup_connection(
     stream.set_nodelay(true).expect("Failed to set nodelay on stream");
     stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
 
-    loop {
-        match master_to_backup_rx.recv() {
-            Ok(message) => {
-                let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
-                match stream.write(&encoded){
-                    Ok(_)=>{
-                        dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
+    spawn (move ||{
+        loop {
+            match master_to_backup_rx.recv() {
+                Ok(message) => {
+                    let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
+                    match stream.write(&encoded){
+                        Ok(_)=>{
+                            dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
+                        }
+                        Err(_)=>{
+                            dprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
+                            backup_disconected_tx.send(true).unwrap(); 
+                            return;
+                        }
                     }
-                    Err(_)=>{
-                        dprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
-                        backup_disconected_tx.send(true).unwrap(); 
-                        return;
-                    }
+                    dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
                 }
-                dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
-            }
-            Err(_) => {
-                dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                Err(_) => {
+                    dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                }
             }
         }
-    }
+    });
 }
 
