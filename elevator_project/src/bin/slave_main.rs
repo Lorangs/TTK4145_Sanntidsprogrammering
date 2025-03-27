@@ -4,6 +4,8 @@ use elevator_project::slave::Slave;
 use std::path::Path;
 use std::process::Command;
 
+/// Main function for the slave unit.
+/// If the loop exits (e.g., due to an error), a new slave process is spawned to restart it.
 fn main() {
     let config = Config::read_config(Path::new("config.json")).unwrap();
     
@@ -14,9 +16,6 @@ fn main() {
 
     slave.slave_loop();
     dprintln!("[SLAVE]\t\tslave failed, restarting slave\n");
-
-    //drop(slave);
-    //sleep(Duration::from_secs(1)); Testa uten dei og det funka, men har lyst å teste en gang til før eg sletta
 
     Command::new("cargo")
         .args(["run", "--bin", "slave_main"])
