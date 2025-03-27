@@ -6,6 +6,9 @@ use std::env;
 use std::path::Path;
 use std::process::Command;
 
+/// Main function for the Master unit. 
+/// If starting from scratch takes no argument.
+/// Else, if started by a backup, takes a json string of type OrderRequests as input argument.
 fn main() {
     let args: Vec<String> = env::args().collect();
     let config = Config::read_config(Path::new("config.json")).unwrap();
