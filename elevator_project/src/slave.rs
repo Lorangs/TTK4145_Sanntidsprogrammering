@@ -411,7 +411,7 @@ impl Slave {
                         let message = msg.unwrap();
                         match message {
                             io_datastructures::Message::NewOrder(callbutton) => {
-                                if self.state.behaviour == ElevatorBehaviour::Idle { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
+                                if self.state.behaviour != ElevatorBehaviour::OutOfOrder { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
                                     self.nxt_order = callbutton;
                                     //dprintln!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
                                     dprintln!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
