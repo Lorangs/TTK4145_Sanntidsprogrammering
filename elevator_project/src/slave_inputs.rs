@@ -1,8 +1,8 @@
-use driver_rust::elevio::{self};
 use crate::config::BUFFER_SIZE;
 use crate::io_datastructures::{ErrorState, Message};
 use crossbeam_channel::{self as cbc};
 use debug_print::debug_println as dprintln;
+use driver_rust::elevio::{self};
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::TcpStream;

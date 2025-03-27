@@ -25,7 +25,6 @@ pub struct Master {
 }
 
 impl Master {
-
     /// Initialize a new master unit
     /// Will start as a lone master if no backup is found
     pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, String> {
@@ -48,9 +47,10 @@ impl Master {
 
         // Thread for listening for new slave connections
         spawn(move || {
-            let listener = 
-                TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
-            
+            let listener =
+                TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str())
+                    .expect("Failed to bind");
+
             for stream in listener.incoming() {
                 let slave_number: usize;
                 match stream.as_ref().unwrap().peer_addr().unwrap().ip() {
@@ -236,8 +236,8 @@ impl Master {
                                 dprintln!("[MASTER]\tNew state update from slave:\t{}", new_state);
 
                                 match locked_requests.get_next_order(slave_number) {
-                                    Ok(Some(nxt_order)) => {
-                                        let message = Message::NewOrder(nxt_order);
+                                    Ok(Some(next_order)) => {
+                                        let message = Message::NewOrder(next_order);
                                         locked_channels[slave_number]
                                             .clone()
                                             .unwrap()
@@ -247,7 +247,7 @@ impl Master {
                                         dprintln!(
                                             "[MASTER]\tNew order message sent to slave:{}, order{}",
                                             slave_number,
-                                            nxt_order
+                                            next_order
                                         );
                                     }
                                     Ok(None) => {

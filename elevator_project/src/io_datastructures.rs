@@ -4,9 +4,7 @@ use driver_rust::elevio::elev::{CAB, HALL_DOWN, HALL_UP};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
-use std::fmt::{
-    Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult
-};
+use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::Error;
 use std::process::Command;
 
@@ -110,7 +108,7 @@ impl Direction {
         match self {
             Direction::Down => "down",
             Direction::Stop => "stop",
-            Direction::Up   => "up",
+            Direction::Up => "up",
         }
     }
 }
@@ -122,7 +120,7 @@ impl FmtDisplay for Direction {
             match self {
                 Direction::Down => "Down",
                 Direction::Stop => "Stop",
-                Direction::Up   => "Up",
+                Direction::Up => "Up",
             }
         )
     }
@@ -131,9 +129,9 @@ impl FmtDisplay for Direction {
 /// Struct for the state of the elevator. This include the behaviour, floor, direction and local cab requests.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ElevatorState {
-    pub behaviour   : ElevatorBehaviour,
-    pub floor       : u8,
-    pub direction   : Direction,
+    pub behaviour: ElevatorBehaviour,
+    pub floor: u8,
+    pub direction: Direction,
     pub cab_requests: [bool; NUMBER_OF_FLOORS],
 }
 impl ElevatorState {

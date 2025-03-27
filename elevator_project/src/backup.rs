@@ -18,10 +18,9 @@ pub struct Backup {
 }
 
 impl Backup {
-    
     /// Initilize a new Backup.
     /// Will loop until a master connection is established.
-    /// Returns a backup unit with a master connected. 
+    /// Returns a backup unit with a master connected.
     pub fn init(config: &Config) -> Result<Backup, Error> {
         dprintln!("[BACKUP]\tInitializing backup");
 

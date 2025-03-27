@@ -1,8 +1,8 @@
 use crate::config::{Config, NUMBER_OF_FLOORS};
-use crate::slave_inputs;
 use crate::io_datastructures::{
     CallButton, Direction, ElevatorBehaviour, ElevatorState, ErrorState, Message,
 };
+use crate::slave_inputs;
 use crossbeam_channel as cbc;
 use debug_print::debug_println as dprintln;
 use driver_rust::elevio::elev::{
@@ -19,12 +19,12 @@ pub struct Slave {
     pub state: ElevatorState,
     obstruction: bool,
     stop_button: bool,
-    nxt_order: CallButton,
+    next_order: CallButton,
     channels: slave_inputs::SlaveChannels,
     master_channels: Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>, // If None the elevator is in local mode
     door_timer: (cbc::Sender<bool>, cbc::Receiver<bool>),
     motor_timeout: (cbc::Sender<bool>, cbc::Receiver<bool>),
-    timestamp_prev_floor: Instant, 
+    timestamp_prev_floor: Instant,
     light_matrix: [[bool; 2]; NUMBER_OF_FLOORS], // [Hall_UP, Hall_DOWN] for each floor
 }
 
@@ -44,7 +44,7 @@ impl Slave {
         let mut slave = Self {
             config: conf,
             elevator: elev,
-            nxt_order: CallButton { floor: 0, call: 0 },
+            next_order: CallButton { floor: 0, call: 0 }, // Need to be initialized, but not used until a new order is received
             state: ElevatorState::init(),
             obstruction: false,
             stop_button: false,
@@ -94,7 +94,8 @@ impl Slave {
         slave
     }
 
-    /// Iter through the list of IP addresses and try to connect to a master at each address. Return when a connection is established or none is found.
+    /// Iter through the list of IP addresses and try to connect to a master at each address.
+    /// Return when a connection is established or none is found.
     fn try_connect_to_new_master(&mut self) {
         for ip_addr in &self.config.elevator_ip_list {
             let socket_addr =
@@ -112,17 +113,15 @@ impl Slave {
                         self.config.input_poll_rate_ms,
                     ));
                     //Stop the elevator, and let the master decide what to do
-                    //ditta gjær at de blir et lite hakk, men e de innafor siden de e beire en at den kjøre utforbi
                     self.elevator.motor_direction(DIRN_STOP);
                     self.set_behaviour(ElevatorBehaviour::Idle);
                     return;
                 }
-                Err(_e) => {} // Continue trying with the next IP address
+                Err(_) => {} // Continue trying with the next IP address
             }
         }
     }
 
-    /// Sync hall lights with hall requests
     fn sync_hall_lights(&self) {
         dprintln!("[SLAVE]\t\tSyncing hall lights");
         for (floor, light_array) in self.light_matrix.iter().enumerate() {
@@ -133,7 +132,6 @@ impl Slave {
         }
     }
 
-    /// Sync cab lights with local cab requests
     fn sync_cab_lights(&self) {
         dprintln!("[SLAVE]\t\tSyncing cab lights");
         for (floor, order) in self.state.cab_requests.iter().enumerate() {
@@ -141,7 +139,6 @@ impl Slave {
         }
     }
 
-    /// Send new order to master
     fn send_new_order(&mut self, callbutton: CallButton) {
         let message = Message::NewOrder(callbutton);
 
@@ -151,30 +148,34 @@ impl Slave {
         }
 
         match callbutton.call {
-            0_u8..=1_u8 => match self.master_channels.as_mut().unwrap().0.send(message) {
+            HALL_DOWN | HALL_UP => match self.master_channels.as_mut().unwrap().0.send(message) {
                 Ok(_) => {}
                 Err(e) => {
                     dprintln!("[SLAVE]\t\tFailed to send order: {}", e);
                     self.master_channels = None;
                 }
             },
-            2 => {
+            CAB => {
                 self.state.cab_requests[callbutton.floor as usize] = true;
                 self.send_state_update();
                 self.sync_cab_lights();
             }
-            _ => panic!("Mottok ukjent knappetype"),
+            _ => {
+                dprintln!(
+                    "[SLAVE]\t\tInvalid call button. Hardware failiure: {}",
+                    callbutton.call
+                )
+            }
         }
     }
 
-    /// Send order complete message to master
     fn send_order_complete(&mut self) {
         self.state.cab_requests[self.state.floor as usize] = false;
         self.send_state_update();
         self.sync_cab_lights();
 
-        if self.nxt_order.call != CAB {
-            let message = Message::OrderComplete(self.nxt_order);
+        if self.next_order.call != CAB {
+            let message = Message::OrderComplete(self.next_order);
 
             if self.master_channels.is_none() {
                 dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -192,7 +193,6 @@ impl Slave {
         }
     }
 
-    /// Send emergancy stop message to master
     fn send_stop_button(&mut self) {
         let message = Message::Error(ErrorState::EmergancyStop);
 
@@ -209,7 +209,7 @@ impl Slave {
         }
     }
 
-    /// Choose direction based on next order from master and start moving.
+    /// Choose direction based on next order from master and start moving
     fn start_moving_normal(&mut self) {
         if self.state.behaviour == ElevatorBehaviour::DoorOpen
             || self.state.behaviour == ElevatorBehaviour::OutOfOrder
@@ -220,7 +220,7 @@ impl Slave {
         slave_inputs::start_timer(self.motor_timeout.0.clone(), self.config.est_moving_time_s);
         self.timestamp_prev_floor = Instant::now();
 
-        if self.state.floor > self.nxt_order.floor {
+        if self.state.floor > self.next_order.floor {
             self.state.direction = Direction::Down;
             self.set_behaviour(ElevatorBehaviour::Moving);
         } else {
@@ -234,7 +234,6 @@ impl Slave {
         }
     }
 
-    /// Send the current state of the elevator to master
     pub fn send_state_update(&mut self) {
         if self.master_channels.is_none() {
             dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -250,7 +249,7 @@ impl Slave {
         }
     }
 
-    /// Set the behaviour of the elevator. If the behaviour is changed, send a state update to the master.
+    /// Set the behaviour of the elevator. If the behaviour is changed, send a state update to the master
     fn set_behaviour(&mut self, new_behaviour: ElevatorBehaviour) {
         if new_behaviour != self.state.behaviour {
             self.state.behaviour = new_behaviour;
@@ -277,7 +276,7 @@ impl Slave {
 
                         self.elevator.floor_indicator(self.state.floor);
 
-                        if self.state.floor == self.nxt_order.floor{
+                        if self.state.floor == self.next_order.floor{
                             self.state.direction = Direction::Stop;
                             self.elevator.motor_direction(DIRN_STOP);
                             self.set_behaviour(ElevatorBehaviour::DoorOpen);
@@ -323,7 +322,7 @@ impl Slave {
                             slave_inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
                             dprintln!("[SLAVE]\t\tObstruction detected. Door timer reset.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
-                            self.send_state_update(); //sånn at lysmatrisa blir oppdatert skjølv om heisen e stuck
+                            self.send_state_update();
                         }
                         else {
                             dprintln!("[SLAVE]\t\tDoor timer expired. Closing door.");
@@ -332,7 +331,7 @@ impl Slave {
                         }
                     }
 
-                    // Receive motor timeout if the elevator has not reached a floor within the estimated moving time
+                    // Receive motor timeout if the elevator has not reached a floor within the estimated moving time set in config file.
                     recv(self.motor_timeout.1) -> _msg => {
                         if      self.timestamp_prev_floor + Duration::from_secs(self.config.est_moving_time_s) < std::time::Instant::now()
                             &&  self.state.behaviour == ElevatorBehaviour::Moving
@@ -350,9 +349,9 @@ impl Slave {
                         match message {
                             Message::NewOrder(callbutton) => {
                                 if self.state.behaviour == ElevatorBehaviour::Idle {
-                                    self.nxt_order = callbutton;
-                                    dprintln!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
-                                    if self.state.floor == self.nxt_order.floor {
+                                    self.next_order = callbutton;
+                                    dprintln!("[SLAVE]\t floor: {:#?}, next_order: {:#?}", self.state.floor, self.next_order.floor);
+                                    if self.state.floor == self.next_order.floor {
                                         self.set_behaviour(ElevatorBehaviour::DoorOpen);
                                         self.elevator.door_light(true);
                                         slave_inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
@@ -371,7 +370,7 @@ impl Slave {
                                 self.sync_hall_lights();
                                 dprintln!("[SLAVE]\t\tReceived light matrix");
                             },
-                            // Receive state update from master. Used to syncronize the state of the elevator when connecting to a new master.
+                            // Receive state update from master. Used to syncronize the state of the elevator when connecting to a new master
                             Message::StateUpdate(state) => {
                                 for i in 0..NUMBER_OF_FLOORS {
                                     if state.cab_requests[i] {
@@ -386,7 +385,7 @@ impl Slave {
                                 dprintln!("[SLAVE]\t\tStarting in local operating mode");
                                 self.master_channels = None;
 
-                                // turn off all hall lights since we are in local mode and no longer take hall orders
+                                // Turn off all hall lights since we are in local mode and no longer take hall orders
                                 for i in 0..NUMBER_OF_FLOORS {
                                     self.elevator.call_button_light(i as u8, HALL_UP, false);
                                     self.elevator.call_button_light(i as u8, HALL_DOWN, false);
@@ -406,7 +405,7 @@ impl Slave {
                     }
                 } // cbc::select
             }
-            // if
+            // if master_channels.is_some()
 
             /************** local operation mode ***************/
             else {
@@ -432,7 +431,7 @@ impl Slave {
                                 self.sync_cab_lights();
                                 self.elevator.motor_direction(DIRN_STOP);
 
-                                slave_inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);    // starting doortimer
+                                slave_inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
                             }
                         }
                     }
@@ -444,7 +443,7 @@ impl Slave {
 
 
                         // Update local cab requests
-                        if call_button.call == 2 {
+                        if call_button.call == CAB {
                             self.state.cab_requests[call_button.floor as usize] = true;
                         }
 
@@ -469,6 +468,7 @@ impl Slave {
                         }
                     }
 
+                    // Receive obstruction message from elevator
                     recv(self.channels.obstruction_rx) -> msg => {
                         let obstr = msg.unwrap();
                         self.obstruction = obstr;
@@ -507,34 +507,30 @@ impl Slave {
 
     /************ functions for local operation mode **************/
 
-    /// Find the next order above the current floor
     fn orders_above(&mut self) -> bool {
         for floor in (self.state.floor + 1)..NUMBER_OF_FLOORS as u8 {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = CallButton { floor, call: CAB };
+                self.next_order = CallButton { floor, call: CAB };
                 return true;
             }
         }
         false
     }
 
-    /// Find the next order below the current floor
     fn orders_below(&mut self) -> bool {
         for floor in 0..self.state.floor {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = CallButton { floor, call: CAB };
+                self.next_order = CallButton { floor, call: CAB };
                 return true;
             }
         }
         false
     }
 
-    /// Check if there are any orders in the current floor
     pub fn orders_here(&self) -> bool {
         self.state.cab_requests[self.state.floor as usize]
     }
 
-    /// Check if the elevator should stop at the current floor
     fn should_stop(&mut self) -> bool {
         match self.state.direction {
             Direction::Down => {
@@ -593,10 +589,9 @@ impl Slave {
         self.state.cab_requests[self.state.floor as usize] = false;
     }
 
-    /// Start moving the elevator when in local operation mode
     fn start_moving_local(&mut self) {
         let (diraction, behaviour) = self.choose_direction();
-        self.nxt_order = CallButton {
+        self.next_order = CallButton {
             floor: 1,
             call: CAB,
         };
@@ -607,7 +602,7 @@ impl Slave {
 
         if behaviour == ElevatorBehaviour::DoorOpen {
             dprintln!("Stopped with door open at floor {:?}", self.state.floor);
-            self.clear_at_current_floor(); //den opna ikkje døra når den fikk order i samme etasje so de va, so la til 2 linje som fiksa det
+            self.clear_at_current_floor();
             self.sync_cab_lights();
             self.elevator.door_light(true);
             slave_inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
@@ -637,14 +632,14 @@ impl Display for Slave {
             "Slave:\n\
             \tElevator:\t{:#?}\n\
             \tState:\t{:#?}\n\
-            \tNxt_order:\t{:#?}\n\
+            \tnext_order:\t{:#?}\n\
             \tObstruction:\t{:#?}\n\
             \tChannels:\t{:#?}\n\
             \tMaster_socket:\t{:#?}\n\
             \tDoor_timer:\t{:#?}",
             self.elevator,
             self.state,
-            self.nxt_order,
+            self.next_order,
             self.obstruction,
             self.channels,
             self.master_channels,
