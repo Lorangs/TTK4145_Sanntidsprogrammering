@@ -142,7 +142,7 @@ fn spawn_thread_for_master_connection(
                         let msg = Message::Error(ErrorState::Network);
                         match master_to_backup_tx.send(msg) {
                             Ok(_) => {}
-                            Err(e) => {
+                            Err(_e) => {
                                 dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
                             }
                         }

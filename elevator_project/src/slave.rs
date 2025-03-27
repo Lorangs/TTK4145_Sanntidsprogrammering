@@ -144,7 +144,7 @@ impl Slave {
 
     /// Send new order to master
     fn send_new_order(&mut self, callbutton: CallButton) {
-        let message = Message::NewOrder(callbutton.clone());
+        let message = Message::NewOrder(callbutton);
 
         if self.master_channels.is_none() {
             dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -423,22 +423,19 @@ impl Slave {
 
                         self.state.floor = floor_sensor;
 
-                        match self.state.behaviour {
-                            ElevatorBehaviour::Moving => {
-                                self.state.floor = floor_sensor;
-                                self.elevator.floor_indicator(self.state.floor);
-                                if self.should_stop() {
-                                    dprintln!("[SLAVE]\t\tStopping at floor {:?}", self.state.floor);
-                                    self.set_behaviour(ElevatorBehaviour::DoorOpen);
-                                    self.elevator.door_light(true);
-                                    self.clear_at_current_floor();
-                                    self.sync_cab_lights();
-                                    self.elevator.motor_direction(DIRN_STOP);
-            
-                                    inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);    // starting doortimer
-                                }
-                            },
-                            _ => {},
+                        if self.state.behaviour == ElevatorBehaviour::Moving {
+                            self.state.floor = floor_sensor;
+                            self.elevator.floor_indicator(self.state.floor);
+                            if self.should_stop() {
+                                dprintln!("[SLAVE]\t\tStopping at floor {:?}", self.state.floor);
+                                self.set_behaviour(ElevatorBehaviour::DoorOpen);
+                                self.elevator.door_light(true);
+                                self.clear_at_current_floor();
+                                self.sync_cab_lights();
+                                self.elevator.motor_direction(DIRN_STOP);
+        
+                                inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);    // starting doortimer
+                            }
                         }
                     }
 
@@ -455,11 +452,8 @@ impl Slave {
 
                         self.sync_cab_lights();
 
-                        match self.state.behaviour {
-                            ElevatorBehaviour::Idle => {
+                        if self.state.behaviour == ElevatorBehaviour::Idle {
                                 self.start_moving_local();
-                            },
-                            _ => {},
                         }
                     }
 

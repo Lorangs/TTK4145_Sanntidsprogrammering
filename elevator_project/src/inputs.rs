@@ -1,21 +1,22 @@
-use crate::config::BUFFER_SIZE;
-use crate::io_datastructures::{ErrorState, Message};
 use crossbeam_channel::{self as cbc};
-use debug_print::debug_println as dprintln;
 use driver_rust::elevio::{self};
-use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
+use std::fmt::{Display as FmtDisplay, Result as FmtResult, Formatter as FmtFormatter};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
+use crate::io_datastructures::{Message, ErrorState};
+use crate::config::BUFFER_SIZE;
+use debug_print::debug_println as dprintln;
+
 
 // Struct containing all the rx channels from the elevator io driver to the Slave unit. 
 #[derive(Debug, Clone)]
 pub struct SlaveChannels {
-    pub floor_sensor_rx: cbc::Receiver<u8>,
-    pub call_button_rx: cbc::Receiver<elevio::poll::CallButton>,
-    pub stop_button_rx: cbc::Receiver<bool>,
-    pub obstruction_rx: cbc::Receiver<bool>,
+    pub floor_sensor_rx : cbc::Receiver<u8>,
+    pub call_button_rx  : cbc::Receiver<elevio::poll::CallButton>,
+    pub stop_button_rx  : cbc::Receiver<bool>,
+    pub obstruction_rx  : cbc::Receiver<bool>,
 }
 impl FmtDisplay for SlaveChannels {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
@@ -81,7 +82,8 @@ pub fn spawn_thread_for_master_connection
 (
     mut stream: TcpStream,
     input_poll_rate_ms: u64,
-) -> (cbc::Sender<Message>, cbc::Receiver<Message>) {
+) -> (cbc::Sender<Message>, cbc::Receiver<Message>)
+{
     let poll_period: Duration = Duration::from_millis(input_poll_rate_ms);
     let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded::<Message>();
     let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded::<Message>();
@@ -95,17 +97,14 @@ pub fn spawn_thread_for_master_connection
         loop {
             match slave_to_master_rx.try_recv() {
                 Ok(message) => {
-                    let encoded =
-                        bincode::serialize(&message).expect("Failed to serialize message");
+                    let encoded = bincode::serialize(&message).expect("Failed to serialize message");
                     match stream.write_all(&encoded) {
                         Ok(_) => {
                             dprintln!("[SLAVE]\t\tSent message to master: {:#?}", message);
                         }
                         Err(e) => {
                             dprintln!("[SLAVE]\t\tFailed to write to stream: {}", e);
-                            master_to_slave_tx
-                                .send(Message::Error(ErrorState::Network))
-                                .unwrap();
+                            master_to_slave_tx.send(Message::Error(ErrorState::Network)).unwrap();
                         }
                     }
                 }
@@ -118,8 +117,7 @@ pub fn spawn_thread_for_master_connection
             match stream.read(&mut encoded) {
                 Ok(size) => {
                     if size > 0 {
-                        let msg: Message = bincode::deserialize::<Message>(&encoded[..size])
-                            .expect("Failed to deserialize message");
+                        let msg: Message = bincode::deserialize::<Message>(&encoded[..size]).expect("Failed to deserialize message");
                         dprintln!("[SLAVE]\t\tReceived message from master: {:#?}", msg);
                         master_to_slave_tx.send(msg).unwrap();
                     }
@@ -132,14 +130,12 @@ pub fn spawn_thread_for_master_connection
                         // Treat all other errors as network errors.
                         _ => {
                             dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
-                            master_to_slave_tx
-                                .send(Message::Error(ErrorState::Network))
-                                .unwrap();
+                            master_to_slave_tx.send(Message::Error(ErrorState::Network)).unwrap();
                         }
                     }
                 }
             }
-            sleep(poll_period); //eg vil teste uten sleep hær
+            sleep(poll_period);
         }
     });
     (slave_to_master_tx, master_to_slave_rx)
