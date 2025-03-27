@@ -1,4 +1,3 @@
-#![feature(tcp_linger)]
 
 // Modules required for the binary crate
 pub mod backup;
