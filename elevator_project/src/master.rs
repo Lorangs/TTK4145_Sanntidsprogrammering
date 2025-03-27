@@ -68,8 +68,8 @@ impl OrderRequests {
             if state.behaviour != ElevatorBehaviour::OutOfOrder {
                 let state_object = json!({
                     "floor": state.floor,
-                    "behaviour": state.behaviour.to_ascii_lowercase(),
-                    "direction": state.direction.to_ascii_lowercase(),
+                    "behaviour": state.behaviour.to_hall_assigner_lowercase(),
+                    "direction": state.direction.to_hall_assigner_lowercase(),
                     "cabRequests": state.cab_requests,
                     });
                 states.insert(key.to_string(), state_object);

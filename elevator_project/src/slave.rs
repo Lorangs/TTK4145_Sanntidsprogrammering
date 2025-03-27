@@ -28,7 +28,7 @@ pub enum ElevatorBehaviour {
     OutOfOrder,
 }
 impl ElevatorBehaviour{
-    pub fn to_ascii_lowercase(self) -> &'static str{
+    pub fn to_hall_assigner_lowercase(self) -> &'static str{
         match self {
             ElevatorBehaviour::Idle => "idle",
             ElevatorBehaviour::Moving => "moving",
@@ -45,7 +45,7 @@ pub enum Direction {
     Up = 1,
 }
 impl Direction {
-    pub fn to_ascii_lowercase(self) -> &'static str{
+    pub fn to_hall_assigner_lowercase(self) -> &'static str{
         match self {
             Direction::Down => "down",
             Direction::Stop => "stop",
@@ -96,16 +96,21 @@ pub struct Slave {
     channels            : inputs::SlaveChannels,
     master_channels     : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If None the elevator is in local mode
     door_timer          : (cbc::Sender<bool>, cbc::Receiver<bool>),
-    motor_timeout       : (cbc::Sender<bool>, cbc::Receiver<bool>),
-    timestamp_prev_floor: Instant,
-    light_matrix        : [[bool; 2]; NUMBER_OF_FLOORS],                                       // [Hall_UP, Hall_DOWN] for each floor
+    motor_timeout       : (cbc::Sender<bool>, cbc::Receiver<bool>),                             
+    timestamp_prev_floor: Instant,                                                              // Timestamp for when the elevator last passed a floor
+    light_matrix        : [[bool; 2]; NUMBER_OF_FLOORS],                                        // [Hall_UP, Hall_DOWN] for each floor
 }
 
 impl Slave {
+
+    /// Initialize a new slave unit
     pub fn init(config: &Config) -> Slave {
         let conf: Config = config.clone();
-        let elev: e::Elevator = e::Elevator::init(("localhost:".to_string() + config.slave_port.to_string().as_str()).as_str(), NUMBER_OF_FLOORS as u8)
-        .expect("[SLAVE]\t\tFailed to initialize elevator");
+        let elev: e::Elevator = e::Elevator::init
+            (    
+                ("localhost:".to_string() + config.slave_port.to_string().as_str()).as_str(), 
+                NUMBER_OF_FLOORS as u8
+            ).expect("[SLAVE]\t\tFailed to initialize elevator");
     
         let chs: inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(
             &elev,
@@ -142,7 +147,8 @@ impl Slave {
                     let floor_sensor = msg.unwrap();
                     dprintln!("[SLAVE]\t\tReceived floor sensor message: {:#?}", floor_sensor);
                     slave.state.floor = floor_sensor;
-                    if slave.state.floor !=u8::MAX{
+                    if slave.state.floor !=u8::MAX
+                    {
                         slave.elevator.motor_direction(DIRN_STOP);
                         slave.state.direction = Direction::Stop;
                         slave.state.behaviour = ElevatorBehaviour::Idle;
@@ -155,17 +161,19 @@ impl Slave {
 
         slave.try_connect_to_new_master();
 
-        if slave.master_channels.is_none() {
+        if slave.master_channels.is_none() 
+        {
             dprintln!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
         }
-        else{
+        else
+        {
             dprintln!("[SLAVE]\t\tConnected to master. Starting in normal operation mode.");
             slave.send_state_update();
         }
         return slave;
     }
 
-  
+    /// Iter through the list of IP addresses and try to connect to a master at each address. Return when a connection is established or none is found.
     fn try_connect_to_new_master(&mut self) {
         for ip_addr in &self.config.elevator_ip_list {
             let socket_addr = std::net::SocketAddr::new(std::net::IpAddr::V4(*ip_addr), self.config.master_port);
@@ -185,26 +193,24 @@ impl Slave {
         }
     }
 
-    // Poll light information from dirver and update light_matrix
+    /// Sync hall lights with hall requests
     fn sync_hall_lights(&self) {
-        dprintln!("[SLAVE]\t\tSyncing lights");
-        for (floor_index, light_array) in self.light_matrix.iter().enumerate() {
-            let floor = floor_index as u8;
-            self.elevator
-                .call_button_light(floor, HALL_UP, light_array[0]);
-            self.elevator
-                .call_button_light(floor, HALL_DOWN, light_array[1]);
+        dprintln!("[SLAVE]\t\tSyncing hall lights");
+        for (floor, light_array) in self.light_matrix.iter().enumerate() {
+            self.elevator.call_button_light(floor as u8, HALL_UP,     light_array[0]);
+            self.elevator.call_button_light(floor as u8, HALL_DOWN,   light_array[1]);
         }
     }
 
-
+    /// Sync cab lights with local cab requests
     fn sync_cab_lights(&self) {
+        dprintln!("[SLAVE]\t\tSyncing cab lights");
         for (floor, order) in self.state.cab_requests.iter().enumerate() {
             self.elevator.call_button_light(floor as u8, e::CAB,        *order);
         }
     }
 
-
+    /// Send new order to master
     fn send_new_order(&mut self, callbutton: tcp::CallButton) {
         let message = tcp::Message::NewOrder(callbutton.clone());
 
@@ -236,6 +242,8 @@ impl Slave {
         }
     }
 
+
+    /// Send order complete message to master
     fn send_order_complete(&mut self) {
         self.state.cab_requests[self.state.floor as usize]   = false;
         self.send_state_update();
@@ -323,7 +331,7 @@ impl Slave {
     }
 
 
-    /// State machine for the slave elevator
+    /// State machine for the slave unit
     pub fn slave_loop(&mut self) {
         loop {
 
@@ -357,14 +365,14 @@ impl Slave {
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
                         let new_call = tcp::CallButton { floor: call_button.floor, call: call_button.call };
-                        dprintln!("[SLAVE]\t\tReceived call button message: {:#?}", new_call);
+                        dprintln!("[SLAVE]\t\tReceived call button message:\t{:#?}", new_call);
                         self.send_new_order(new_call);
                     }
 
                     // Receive stop button from elevator
                     recv(self.channels.stop_button_rx) -> msg => {
                         self.stop_button = msg.unwrap();
-                        dprintln!("[SLAVE]\t\tStop button: {:#?}", self.stop_button);
+                        dprintln!("[SLAVE]\t\tStop button:\t{:#?}", self.stop_button);
                         if self.stop_button {
                             self.elevator.motor_direction(DIRN_STOP);
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
@@ -380,20 +388,19 @@ impl Slave {
                     recv(self.channels.obstruction_rx) -> msg => {
                         let obstr = msg.unwrap();
                         self.obstruction = obstr;
-                        dprintln!("[SLAVE]\t\tObstruction: {:#?}", obstr);
+                        dprintln!("[SLAVE]\t\tObstruction:\t{:#?}", obstr);
                     }
 
                     // Receive door timer expiration from door_timer
                     recv(self.door_timer.1) -> _msg => {
                         if self.obstruction {
-                            //dprintln!("Obstruction detected. Timer reset.");
                             start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s);
-                            dprintln!("[SLAVE]\t\tObstruction detected. Timer reset.");
+                            dprintln!("[SLAVE]\t\tObstruction detected. Door timer reset.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_state_update(); //sånn at lysmatrisa blir oppdatert skjølv om heisen e stuck
                         }
                         else {
-                            dprintln!("[SLAVE]\t\tTimer expired. Door closing.");
+                            dprintln!("[SLAVE]\t\tDoor timer expired. Closing door.");
                             self.elevator.door_light(false);
                             self.set_behaviour(ElevatorBehaviour::Idle);
                         }
@@ -418,8 +425,7 @@ impl Slave {
                             tcp::Message::NewOrder(callbutton) => {
                                 if self.state.behaviour == ElevatorBehaviour::Idle { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
                                     self.nxt_order = callbutton.clone();
-                                    //dprintln!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
-                                    dprintln!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
+                                    dprintln!("[SLAVE]\t floor: {:#?},\tnxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
                                     if self.state.floor == self.nxt_order.floor {
                                         self.set_behaviour(ElevatorBehaviour::DoorOpen);
                                         self.elevator.door_light(true);
@@ -436,8 +442,8 @@ impl Slave {
                             },
                             tcp::Message::LightMatrix(matrix) => {
                                 self.light_matrix = matrix;
-                                //dprintln!("[SLAVE]\t\tReceived light matrix");
                                 self.sync_hall_lights();
+                                dprintln!("[SLAVE]\t\tReceived light matrix");
                             },
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
                             tcp::Message::StateUpdate(state) => {     
@@ -447,7 +453,7 @@ impl Slave {
                                     }
                                 }
                                 self.send_state_update();
-                                //dprintln!("[SLAVE]\t\tReceived state update");
+                                dprintln!("[SLAVE]\t\tReceived state update");
                             },
                             tcp::Message::Error(_) => { 
                                 dprintln!("[SLAVE]\t\tReceived error message from master"); 
