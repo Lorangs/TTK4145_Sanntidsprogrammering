@@ -1,5 +1,3 @@
-
-
 use crate::config::BUFFER_SIZE;
 use crate::io_datastructures::{ErrorState, Message};
 use crossbeam_channel::{self as cbc};
@@ -107,15 +105,26 @@ pub fn spawn_thread_for_master_connection(
                         }
                     }
                     let mut buf = [0; 128];
-                    if stream.peek(&mut buf).expect("peek failed") == 0 {
-                        dprintln!("[SLAVE]\t\tLost connection to master");
-                        let msg = Message::Error(ErrorState::Network);
-                        match master_to_slave_tx.send(msg) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                dprintln!("[SLAVE]\t\tFailed to send message to master: {}", e);
-                                break;
+                    match stream.peek(&mut buf) {
+                        Ok(0) => {
+                            dprintln!("[SLAVE]\t\tLost connection to master");
+                            let msg = Message::Error(ErrorState::Network);
+                            match master_to_slave_tx.send(msg) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    dprintln!("[SLAVE]\t\tFailed to send message to master: {}", e);
+                                    break;
+                                }
                             }
+                        }
+                        Ok(_) => {
+                            // Connection is still alive
+                        }
+                        Err(e) => {
+                            dprintln!("[SLAVE]\t\tFailed to peek stream: {}", e);
+                            master_to_slave_tx
+                                .send(Message::Error(ErrorState::Network))
+                                .unwrap();
                         }
                     }
                 }
