@@ -9,18 +9,19 @@ use debug_print::debug_println as dprintln;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let config = Config::read_config(Path::new("config.json")).unwrap();
-    let mut order_requests_json=OrderRequests::init();
+    let mut order_requests=OrderRequests::init();
+
     if args.len() < 2 {
-        dprintln!("No order requests provided");
+        dprintln!("[MASTER]\tNo order requests provided. Starting with empty order requests");
     }
     else{
         //let reader = BufReader::new(Cursor::new(args[1].clone()));
-        order_requests_json = serde_json::from_str(&args[1]).unwrap();
-        dprintln!("[MASTER]\tOrder requests: {:?}", order_requests_json);
+        order_requests = serde_json::from_str(&args[1]).unwrap();
+        dprintln!("[MASTER]\tOrder requests: {:?}", order_requests);
     }
 
-    //starting a master first, and if it fails be ready as a backup
-    let mut master = Master::init(&config, order_requests_json).unwrap();
+    //starting a master first, and if it fails start up again as backup
+    let mut master = Master::init(&config, order_requests).unwrap();
     dprintln!("[MASTER]\tMaster initialized");
     master.master_loop();
 

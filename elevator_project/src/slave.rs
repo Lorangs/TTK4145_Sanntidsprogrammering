@@ -94,17 +94,17 @@ pub struct Slave {
     stop_button         : bool,
     nxt_order           : tcp::CallButton,
     channels            : inputs::SlaveChannels,
-    master_channels     : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If none, the elevator is in local mode
+    master_channels     : Option<(cbc::Sender<tcp::Message>, cbc::Receiver<tcp::Message>)>,     // If None the elevator is in local mode
     door_timer          : (cbc::Sender<bool>, cbc::Receiver<bool>),
     motor_timeout       : (cbc::Sender<bool>, cbc::Receiver<bool>),
     timestamp_prev_floor: Instant,
-    light_matrix        : [[bool; 2]; NUMBER_OF_FLOORS],                                       // Hall_UP, Hall_DOWN for each floor
+    light_matrix        : [[bool; 2]; NUMBER_OF_FLOORS],                                       // [Hall_UP, Hall_DOWN] for each floor
 }
 
 impl Slave {
-    pub fn init(slave_addr: String, config: &Config) -> Slave {
+    pub fn init(config: &Config) -> Slave {
         let conf: Config = config.clone();
-        let elev: e::Elevator = e::Elevator::init(&slave_addr, NUMBER_OF_FLOORS as u8)
+        let elev: e::Elevator = e::Elevator::init(("localhost:".to_string() + config.slave_port.to_string().as_str()).as_str(), NUMBER_OF_FLOORS as u8)
         .expect("[SLAVE]\t\tFailed to initialize elevator");
     
         let chs: inputs::SlaveChannels = inputs::spawn_threads_for_slave_inputs(

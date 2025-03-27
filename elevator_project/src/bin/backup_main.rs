@@ -10,15 +10,16 @@ fn main() {
     let config = Config::read_config(Path::new("config.json")).unwrap();
 
     let mut backup = Backup::init(&config);
-    let masterqueues_result = backup.backup_loop();
+    let order_requests = backup.backup_loop();
     
-    match masterqueues_result {
-        Ok(masterqueues) => {
+    match order_requests {
+        Ok(order_requests) => {
             Command::new("cargo")
-                .args(["run", "--bin", "master_main", masterqueues.to_custom_json().as_str()])
+                .args(["run", "--bin", "master_main", order_requests.to_custom_json().as_str()])
                 .spawn()
                 .expect("Failed to start master_main");
         }
+
         Err(e) => {
             dprintln!("[BACKUP]\tBackup loop failed: {:?}", e);
             dprintln!("[BACKUP]\tRestarting backup");
