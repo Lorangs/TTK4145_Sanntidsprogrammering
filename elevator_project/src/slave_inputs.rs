@@ -121,10 +121,7 @@ pub fn spawn_thread_for_master_connection(
                             // Connection is still alive
                         }
                         Err(e) => {
-                            dprintln!("[SLAVE]\t\tFailed to peek stream: {}", e);
-                            master_to_slave_tx
-                                .send(Message::Error(ErrorState::Network))
-                                .unwrap();
+                            dprintln!("[SLAVE]\t\tFailed to peek stream. Lossy.. {}", e);
                         }
                     }
                 }
