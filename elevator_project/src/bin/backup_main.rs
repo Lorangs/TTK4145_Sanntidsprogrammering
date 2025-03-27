@@ -13,14 +13,12 @@ fn main() {
     let order_requests = backup.backup_loop();
     
     match order_requests {
-        //Backup loop ended because it lost conection to master -> start a new master
         Ok(order_requests) => {
             Command::new("cargo")
                 .args(["run", "--bin", "master_main", order_requests.to_json_string().as_str()])
                 .spawn()
                 .expect("Failed to start master_main");
         }
-        //Backup loop ended because of an error -> start a new backup
         Err(e) => {
             dprintln!("[BACKUP]\tBackup loop failed: {:?}", e);
             dprintln!("[BACKUP]\tRestarting backup");
