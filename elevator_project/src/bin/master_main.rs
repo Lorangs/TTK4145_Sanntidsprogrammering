@@ -12,25 +12,26 @@ fn main() {
 
     let mut order_requests = OrderRequests::init();
 
-    println!("Argument: {}",args.len());
+    dprintln!("Argument:\t{}",args.len());
 
+    //master was started by a backup
     if args.len() != 1 {
-        //master was started by a backup
-        match (order_requests = serde_json::from_str(&args[1])){
-            Ok()=>{}
-            Err()=>{
+        match serde_json::from_str(&args[1]) {
+            Ok(or) => {
+                order_requests = or
+            }
+            Err(_e) => {
                 Command::new("cargo")
-                    .args(["run", "--bin", "master_main", args[1]])
+                    .args(["run", "--bin", "master_main", &args[1]])
                     .spawn()
                     .expect("Failed to start master_main");
                 return;
             }
         }
-        dprintln!("[MASTER]\tOrder requests: {:?}", order_requests);
+        dprintln!("[MASTER]\tOrder requests:\t{:?}", order_requests);
     }
     else{
         dprintln!("I am a new master");
-
     }
 
     // Initialize master and start master loop.

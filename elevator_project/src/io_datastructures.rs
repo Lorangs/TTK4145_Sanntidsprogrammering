@@ -39,7 +39,13 @@ pub struct CallButton {
 }
 impl FmtDisplay for CallButton {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
-        write!(f, "Floor: {}, Call: {}", self.floor, self.call)
+        write!(
+            f, 
+            "\tFloor:\t{}\n\
+            \tCall:\t{}", 
+            self.floor,
+            self.call
+        )
     }
 }
 
@@ -103,7 +109,7 @@ impl Direction {
         match self {
             Direction::Down => "down",
             Direction::Stop => "stop",
-            Direction::Up => "up",
+            Direction::Up   => "up",
         }
     }
 }
@@ -145,11 +151,11 @@ impl FmtDisplay for ElevatorState {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         write!(
             f,
-            "ElevatorState:\n\t
-            Behaviour:\t{}\n\t
-            Floor:\t\t{}\n\t
-            Directoin:\t{}\n\t
-            CabRequests:\t{:?}",
+            "ElevatorState:\n\
+            \tBehaviour:\t{}\n\
+            \tFloor:\t\t{}\n\
+            \tDirectoin:\t{}\n\
+            \tCabRequests:\t{:?}",
             self.behaviour, self.floor, self.direction, self.cab_requests
         )
     }
@@ -328,26 +334,14 @@ impl OrderRequests {
             }
         }
     }
-    
-    /// Deserialize the OrderRequests struct from a JSON string.
-    pub fn from_json_string(string: &str) -> OrderRequests {
-        match serde_json::from_str(string){
-            Ok(order_requests) => order_requests,
-            Err(e) => {
-                dprintln!("[MASTER]\tFailed to deserialize OrderRequests from JSON: {}", e);
-                dprintln!("[MASTER]\tReturning empty OrderRequests");
-                OrderRequests::init()
-            }
-        }
-    }
 }
 impl FmtDisplay for OrderRequests {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         write!(
             f,
-            "OrderRequests:\n\t
-            Hall queue:\t{:?}\n\t
-            Cab queues:\t{:?}",
+            "OrderRequests:\n\
+            \tHall queue:\t{:?}\n\
+            \tCab queues:\t{:?}",
             self.hall_requests, 
             self.states
         )

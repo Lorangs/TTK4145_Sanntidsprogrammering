@@ -81,13 +81,14 @@ impl Display for Config {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
-            "Elevator IP list:\t\t{:?}\n\
-            Master port:\t\t\t{}\n\
-            Backup port:\t\t\t{}\n\
-            Elevator port:\t\t\t{}\n\
-            Door open duration [s]:\t\t{}\n\
-            Input poll rate [ms]:\t\t{}\n\
-            TCP timeout [ms]:\t\t{}
+            "Config:\n\
+            Elevator IP list:\t\t{:?}\n\t\
+            Master port:\t\t\t{}\n\t\
+            Backup port:\t\t\t{}\n\t\
+            Elevator port:\t\t\t{}\n\t\
+            Door open duration [s]:\t\t{}\n\t\
+            Input poll rate [ms]:\t\t{}\n\t\
+            TCP timeout [ms]:\t\t{}\n\t\
             Estimated moving time [s]:\t{}",
             self.elevator_ip_list,
             self.master_port,

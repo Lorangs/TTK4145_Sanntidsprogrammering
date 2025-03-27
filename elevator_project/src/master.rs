@@ -361,12 +361,12 @@ impl FmtDisplay for Master {
         write!
         (
             f, 
-            "Master:\n
-            \tConfig:\t{}\n
-            \tRequests:\t{:?}\n
-            \tSlave channels:\t{:?}\n
-            \tMaster to backup tx:\t{:?}\n
-            \tBackup disconected rx:\t{:?}\n",
+            "Master:\n\
+            \tConfig:\t{}\n\
+            \tRequests:\t{:?}\n\
+            \tSlave channels:\t{:?}\n\
+            \tMaster to backup tx:\t{:?}\n\
+            \tBackup disconected rx:\t{:?}",
             self.config,
             self.requests,
             self.slave_channels,

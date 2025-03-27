@@ -6,6 +6,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 use std::io::Error;
+use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 
 use crate::config::{Config, BUFFER_SIZE};
 use crate::io_datastructures::{ErrorState, Message, OrderRequests};
@@ -76,7 +77,19 @@ impl Backup {
         }
     }
 }
-
+impl FmtDisplay for Backup {
+    fn fmt(&self, f : &mut FmtFormatter) -> FmtResult {
+        write!
+        (
+            f,
+            "Backup:\n\
+            \tStored orders:\t{}\n\
+            \tMaster channel:{:?}",
+            self.orders,
+            self.master_to_backup_rx
+        )
+    }
+}
 
 /// Spawn a new thread that will read from the TcpStream and send the message to the master_to_backup_tx channel.
 fn spawn_thread_for_master_connection(
