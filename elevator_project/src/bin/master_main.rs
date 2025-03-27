@@ -23,11 +23,14 @@ fn main() {
 
     }
 
-    //starting a master first, and if it fails be ready as a backup
-    let mut master = Master::init(&config, order_requests_json).unwrap();
+    // Initialize master and start master loop.
+    let mut master = Master::init(&config, order_requests).unwrap();
     dprintln!("[MASTER]\tMaster initialized");
     master.master_loop();
 
+    // If master loop returns, master has failed. Start as backup instead.
+    dprintln!("[MASTER]\tMaster failed, restarting as backup");
+    drop(master);
     Command::new("cargo")
         .args(["run", "--bin", "backup_main"])
         .spawn()

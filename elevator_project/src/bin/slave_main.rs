@@ -6,9 +6,10 @@ use std::process::Command;
 
 fn main() {
     let config = Config::read_config(Path::new("config.json")).unwrap();
-    let elevator_ip = "localhost".to_string() + ":" + &config.elevator_port.to_string();
+    
+    dprintln!("trying to start a slave\n");    
 
-    let mut slave = Slave::init(elevator_ip, &config);
+    let mut slave = Slave::init(&config);
     dprintln!("Slave initialized\n");
 
     slave.slave_loop();
@@ -18,6 +19,7 @@ fn main() {
     //sleep(Duration::from_secs(1)); Testa uten dei og det funka, men har lyst å teste en gang til før eg sletta
 
     Command::new("cargo")
+        .args(["run", "--bin", "slave_main"])
         .args(["run", "--bin", "slave_main"])
         .spawn()
         .expect("Failed to start slave_main");

@@ -63,6 +63,8 @@ mod ipv4_address_vec {
     }
 }
 
+
+/// Maps the config file to a struct
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
     #[serde(with = "ipv4_address_vec")]
@@ -75,7 +77,6 @@ pub struct Config {
     pub tcp_timeout_ms: u64,
     pub est_moving_time_s: u64,
 }
-
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
@@ -99,8 +100,9 @@ impl Display for Config {
         )
     }
 }
-
 impl Config {
+
+    /// Reads the config file and returns a Config struct
     pub fn read_config(path: &Path) -> Result<Config, Error> {
         dprintln!("[CONFIG]\t\tReading config file");
         let file = match File::open(path) {

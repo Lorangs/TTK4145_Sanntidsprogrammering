@@ -19,6 +19,8 @@ fn main() {
             .expect("Failed to start backup_main");
     }
 
+
+    sleep(std::time::Duration::from_secs(1));
     Command::new("cargo")
         .args(["run", "--bin", "slave_main"])
         .spawn()

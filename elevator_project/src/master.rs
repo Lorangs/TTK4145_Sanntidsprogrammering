@@ -39,6 +39,8 @@ impl FmtDisplay for OrderRequests {
 }
 
 impl OrderRequests {
+
+    /// Initialize the OrderRequests struct with empty hall requests and elevator states.
     pub fn init() -> OrderRequests {
         let hall_requests: [[bool; 2]; NUMBER_OF_FLOORS] = [[false; 2]; NUMBER_OF_FLOORS];
         let states: [ElevatorState; NUMBER_OF_ELEVATORS] = [ElevatorState::init(); NUMBER_OF_ELEVATORS];
@@ -49,8 +51,8 @@ impl OrderRequests {
         }
     }
 
-    pub fn update_hall_requests(&mut self, call: io_datastructures::CallButton, add_or_remove: bool) {
-        // true for add, false for remove
+    /// Update the hall requests with a new call button. true for add, false for remove
+    pub fn update_hall_requests(&mut self, call: tcp::CallButton, add_or_remove: bool) { 
         match call.call {
             HALL_UP => {
                 self.hall_requests[call.floor as usize][0] = add_or_remove;
@@ -76,11 +78,11 @@ impl OrderRequests {
         for (key, state) in self.states.iter().enumerate() {
             if state.behaviour != ElevatorBehaviour::OutOfOrder {
                 let state_object = json!({
-                "floor": state.floor,
-                "behaviour": state.behaviour.to_ascii_lowercase(),
-                "direction": state.direction.to_ascii_lowercase(),
-                "cabRequests": state.cab_requests,
-                });
+                    "floor": state.floor,
+                    "behaviour": state.behaviour.to_hall_assigner_lowercase(),
+                    "direction": state.direction.to_hall_assigner_lowercase(),
+                    "cabRequests": state.cab_requests,
+                    });
                 states.insert(key.to_string(), state_object);
             }
         }
@@ -191,32 +193,61 @@ impl OrderRequests {
             Ok(None)
         }
     
-
-    pub fn to_custom_json(&self) -> String {
-        match serde_json::to_string(&self) {
+    /// Serialize the OrderRequests struct to a JSON string.
+    pub fn to_json_string(&self) -> String {
+        match serde_json::to_string(&self){
             Ok(json) => json,
             Err(e) => {
                 dprintln!("[MASTER]\tFailed to serialize OrderRequests to JSON: {}", e);
+                dprintln!("[MASTER]\tReturning empty JSON string");
                 String::new()
             }
         }
     }
+    
+    /// Deserialize the OrderRequests struct from a JSON string.
+    pub fn from_json_string(string: &str) -> OrderRequests {
+        match serde_json::from_str(string){
+            Ok(order_requests) => order_requests,
+            Err(e) => {
+                dprintln!("[MASTER]\tFailed to deserialize OrderRequests from JSON: {}", e);
+                dprintln!("[MASTER]\tReturning empty OrderRequests");
+                OrderRequests::init()
+            }
+        }
+    }
 }
-
-
+impl FmtDisplay for OrderRequests {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!(
+            f,
+            "OrderRequests:\n\t
+            Hall queue:\t{:?}\n\t
+            Cab queues:\t{:?}",
+            self.hall_requests, 
+            self.states
+        )
+    }
+}
 
 #[derive(Debug)]
 pub struct Master {
-    pub config: Config,
-    pub requests: Arc<Mutex<OrderRequests>>, // Vector of slaves order queues
-    slave_channels:
-        Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>>, // Vector of slave channels.
-    master_to_backup_tx: Option<cbc::Sender<Message>>, // Channel for sending messages to backup
-    backup_disconected_rx: cbc::Receiver<bool>,        // Channel for sending messages to backup
+    pub config                      : Config,                                                                     
+    pub requests                    : Arc<Mutex<OrderRequests>>,                                         
+    slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>>,   
+    master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      
+    backup_disconected_rx           : cbc::Receiver<bool>,                                               
 }
 
 impl Master {
-    pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, String> {
+
+    /// Initialize the a new master unit.
+    pub fn init
+    (
+        config: &Config, 
+        order_requests: OrderRequests
+    ) -> Result<Master, String> 
+    {
         let mut master = Master {
             config: config.clone(),
             requests: Arc::new(Mutex::new(order_requests)),
@@ -266,10 +297,9 @@ impl Master {
                             "[MASTER]\tNew slave connection established: {}",
                             stream.peer_addr().unwrap()
                         );
-                        spawn(move || {
-                            handle_slave_connection(stream, slave_to_master_tx, master_to_slave_rx)
-                        });
 
+                        spawn_thread_for_slave_connection(stream, slave_to_master_tx, master_to_slave_rx);
+                        
                         // send previous cab orders to slave
                         dprintln!("[MASTER]\tSending previous orders to slave");
                         locked_channel[slave_number]
@@ -290,9 +320,8 @@ impl Master {
         Ok(master)
     }
 
-    // Returns a 2 x num_floors matrix for updating panel lights.
-    // 2 x num_floors matrix for [hall up, hall down] lights.
-    fn make_light_matrix(&self, requests: OrderRequests) -> io_datastructures::Message {
+    /// Returns a 2 x num_floors matrix for updating panel lights. [hall_up, hall_down]
+    fn make_light_matrix(&self, requests: OrderRequests) -> tcp::Message {
         let mut new_matrix = [[false; 2]; NUMBER_OF_FLOORS];
 
         for (floor, hall_call) in requests.hall_requests.iter().enumerate() {
@@ -314,6 +343,7 @@ impl Master {
         Message::LightMatrix(new_matrix)
     }
 
+    /// Sends the updated order requests to the backup server.
     fn update_backup(&self, requests: OrderRequests) -> Result<(), io_datastructures::ErrorState> {
         if self.master_to_backup_tx.is_some() {
             match self
@@ -336,7 +366,7 @@ impl Master {
         Err(io_datastructures::ErrorState::Network)
     }
 
-    // Main application loop for master (state machine). Should be refactored to be more readable.
+    /// Main application loop for master (state machine).
     pub fn master_loop(&mut self) {
         loop {
             if self.backup_disconected_rx.try_recv().is_ok() {
@@ -498,7 +528,8 @@ impl Master {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
-
+    
+    /// Tries to connect to a new backup server. If connection is found, a new backup channel is set. If no connection is found, the function will try again in the next iteration.
     fn try_connect_to_new_backup(&mut self) {
         let backup_ip_list: Vec<SocketAddr> = self
             .config
@@ -518,14 +549,8 @@ impl Master {
                     let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
                     let (backup_disconected_tx, backup_disconected_rx) = cbc::unbounded();
 
-                    spawn(|| {
-                        handle_backup_connection(
-                            backup_socket,
-                            master_to_backup_rx,
-                            backup_disconected_tx,
-                        )
-                    });
-
+                    spawn_thread_for_backup_connection(backup_socket, master_to_backup_rx,backup_disconected_tx);
+    
                     dprintln!("[MASTER]\tConnected to backup at {}", backup_ip);
                     self.master_to_backup_tx = Some(master_to_backup_tx);
                     self.backup_disconected_rx = backup_disconected_rx;
@@ -539,8 +564,9 @@ impl Master {
     }
 }
 
-// Handles the individual slave connections
-fn handle_slave_connection(
+
+/// Spawns a thread for handling the TcpStream connection to a slave.
+fn spawn_thread_for_slave_connection(
     mut stream: TcpStream,
     slave_to_master_tx: cbc::Sender<io_datastructures::Message>,
     master_to_slave_rx: cbc::Receiver<io_datastructures::Message>,
@@ -556,44 +582,47 @@ fn handle_slave_connection(
         .set_nonblocking(true)
         .expect("Failed to set non-blocking mode on stream");
 
-    loop {
-        match stream.read(&mut buffer) {
-            Ok(size) => {
-                if size > 0 {
-                    let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
-                        .expect("[MASTER]\tFailed to deserialize message from slave");
-                    slave_to_master_tx.send(msg).unwrap();
-                }
-            }
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::WouldBlock => {}
-                _ => {
-                    dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
-                    slave_to_master_tx
-                        .send(io_datastructures::Message::Error(io_datastructures::ErrorState::Network))
-                        .unwrap();
-                }
-            },
-        }
-
-        match master_to_slave_rx.try_recv() {
-            Ok(message) => {
-                let encoded: Vec<u8> =
-                    bincode::serialize(&message).expect("Failed to serialize message to slave");
-                match stream.write_all(&encoded) {
-                    Ok(_) => {}
-                    Err(_e) => {
-                        slave_to_master_tx
-                            .send(Message::Error(io_datastructures::ErrorState::Network))
-                            .unwrap();
+    spawn(move || {
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(size) => {
+                    if size > 0 {
+                        let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
+                            .expect("[MASTER]\tFailed to deserialize message from slave");
+                        slave_to_master_tx.send(msg).unwrap();
                     }
                 }
+                Err(e) => {
+                    match e.kind() {
+                        std::io::ErrorKind::WouldBlock => {  }
+                        _ => {
+                            dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
+                            slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                        }
+                    }
+
+                }
             }
-            Err(_e) => {
-                continue;
+
+            match master_to_slave_rx.try_recv() {
+                Ok(message) => {
+                    let encoded: Vec<u8> =
+                        bincode::serialize(&message).expect("Failed to serialize message to slave");
+                    match stream.write_all(&encoded) {
+                        Ok(_) => {}
+                        Err(_e) => {
+                            slave_to_master_tx
+                            .send(Message::Error(io_datastructures::ErrorState::Network))
+                            .unwrap();
+                        }
+                    }
+                }
+                Err(_e) => {
+                    continue;
+                }
             }
         }
-    }
+    });
 }
 
 
@@ -606,7 +635,18 @@ fn handle_slave_connection(
 
 
 
-fn handle_backup_connection(
+
+
+
+
+
+
+
+
+
+
+/// Spawns a thread for handling the TcpStream connection to a backup.
+fn spawn_thread_for_backup_connection(
     mut stream: TcpStream,
     master_to_backup_rx: cbc::Receiver<io_datastructures::Message>,
     backup_disconected_tx: cbc::Sender<bool>,
@@ -620,26 +660,27 @@ fn handle_backup_connection(
         .set_nonblocking(true)
         .expect("Failed to set non-blocking mode on stream");
 
-    loop {
-        match master_to_backup_rx.recv() {
-            Ok(message) => {
-                let encoded: Vec<u8> =
-                    bincode::serialize(&message).expect("Failed to serialize message to backup");
-                match stream.write(&encoded) {
-                    Ok(_) => {
-                        dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
+    spawn (move ||{
+        loop {
+            match master_to_backup_rx.recv() {
+                Ok(message) => {
+                    let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
+                    match stream.write(&encoded){
+                        Ok(_)=>{
+                            dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
+                        }
+                        Err(_)=>{
+                            dprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
+                            backup_disconected_tx.send(true).unwrap(); 
+                            return;
+                        }
                     }
-                    Err(_) => {
-                        dprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
-                        backup_disconected_tx.send(true).unwrap();
-                        return;
-                    }
+                    dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
                 }
-                dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
-            }
-            Err(_) => {
-                dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                Err(_) => {
+                    dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                }
             }
         }
-    }
+    });
 }

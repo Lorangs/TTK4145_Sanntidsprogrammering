@@ -13,7 +13,7 @@ use crate::io_datastructures::{ErrorState, Message};
 
 pub struct Backup {
     orders: OrderRequests,
-    master_to_backup_rx: cbc::Receiver<Message>,
+    master_to_backup_rx: cbc::Receiver<tcp::Message>,
 }
 
 impl Backup {
@@ -36,7 +36,8 @@ impl Backup {
                             master_to_backup_rx,
                         };
 
-                        spawn(move || handle_master_connection(stream, master_to_backup_tx));
+                        spawn_thread_for_master_connection(stream, master_to_backup_tx);
+        
                         dprintln!("[BACKUP]\tConnected to master");
                         return Ok(backup)
                     }
@@ -49,18 +50,17 @@ impl Backup {
         }
     }
 
-    // Updates backup orders and returns them if master disconnects
-    // Updates backup orders and returns them if master disconnects
+    /// Updates backup and returns the stored oreder_requests if master disconnects
     pub fn backup_loop(&mut self) -> Result<OrderRequests, cbc::RecvError> {
         loop {
             match self.master_to_backup_rx.recv() {
                 Ok(message) => {
                     match message {
-                        Message::Backup(data) => {
+                        tcp::Message::Backup(data) => {
                             self.orders = data;
                             dprintln!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
                         }
-                        Message::Error(ErrorState::Network) => {
+                        tcp::Message::Error(tcp::ErrorState::Network) => {
                             //We asume that most errors ocure becouse of error in the master, so we start a new master. 
                             //Worst case is we start a second master, but this will give an error so the master will not fully initialize, and instead start a new backup anyway
                             dprintln!("[BACKUP]\tMaster disconnected");
@@ -79,17 +79,20 @@ impl Backup {
 }
 
 
-// Handles incoming messages from master.
-fn handle_master_connection(mut stream: TcpStream, master_to_backup_tx: cbc::Sender<Message>)
+/// Spawn a new thread that will read from the TcpStream and send the message to the master_to_backup_tx channel.
+fn spawn_thread_for_master_connection(
+    mut stream: TcpStream,
+    master_to_backup_tx: cbc::Sender<tcp::Message>,
+) 
 {
-    // TTL is set to 3 to prevent packets from being forwarded to other networks. Nodelay is set to true to disable Nagle's algorithm, witch reduces latency.
-    stream.set_ttl(3).expect("Failed to set TTL");
-    stream.set_nodelay(true).expect("Failed to set nodelay");
-    stream.set_nonblocking(true).expect("Failed to set nonblocking");
+    spawn ( move || {
 
-    let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-
-
+        // TTL is set to 3 to prevent packets from being forwarded to other networks
+        stream.set_ttl(3).expect("Failed to set TTL on stream");
+        stream.set_nodelay(true).expect("Failed to set nodelay on stream");
+        stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+        
+        let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
     loop {
         match stream.read(&mut buffer) {
