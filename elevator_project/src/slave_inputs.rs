@@ -87,7 +87,7 @@ pub fn spawn_thread_for_master_connection(
         .expect("Failed to set non-blocking mode on stream");
     stream.set_nodelay(true).expect("Failed to set nodelay"); // Gjør store forbedringer i ytelse. Må være true
     stream.set_ttl(3).expect("Failed to set ttl");
-    stream.set_linger(Some(Duration::from_secs(1))).expect("Failed to set linger");
+    stream.set_linger(Some(Duration::from_secs(0))).expect("Failed to set linger");
 
     spawn(move || {
         let mut encoded: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
