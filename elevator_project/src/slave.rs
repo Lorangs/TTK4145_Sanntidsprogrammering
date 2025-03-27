@@ -299,14 +299,27 @@ impl Slave {
             dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
             return;
         }
-
         let message = io_datastructures::Message::StateUpdate(self.state);
-        match self.master_channels.as_mut().unwrap().0.send(message) {
-            Ok(_) => {}
-            Err(e) => {
-                dprintln!("[SLAVE]\t\tFailed to send status update: {}", e)
+        if let Err(e) = self.master_channels.as_mut().unwrap().0.send(message) {
+            dprintln!("[SLAVE]\t\tFailed to send status update: {}. Switching to local mode.", e);
+            self.master_channels = None;
+            // Turn off all hall lights
+            for i in 0..NUMBER_OF_FLOORS {
+                self.elevator.call_button_light(i as u8, HALL_UP, false);
+                self.elevator.call_button_light(i as u8, HALL_DOWN, false);
+            }
+            if self.state.behaviour == ElevatorBehaviour::Idle {
+                self.start_moving_local();
             }
         }
+
+        // let message = io_datastructures::Message::StateUpdate(self.state);
+        // match self.master_channels.as_mut().unwrap().0.send(message) {
+        //     Ok(_) => {}
+        //     Err(e) => {
+        //         dprintln!("[SLAVE]\t\tFailed to send status update: {}", e)
+        //     }
+        // }
     }
 
     /// Set the behaviour of the elevator. If the behaviour is changed, send a state update to the master.
@@ -461,20 +474,8 @@ impl Slave {
                         }
                     }
                     default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
-                        // Check if the master is still reachable
-                        if let Some((tx, _)) = &self.master_channels {
-                            if tx.send(Message::StateUpdate(self.state)).is_err() {
-                                dprintln!("[SLAVE]\t\tMaster connection lost. Switching to local mode.");
-                                self.master_channels = None;
-                                // Turn off all hall lights
-                                for i in 0..NUMBER_OF_FLOORS {
-                                    self.elevator.call_button_light(i as u8, HALL_UP, false);
-                                    self.elevator.call_button_light(i as u8, HALL_DOWN, false);
-                                }
-                                if self.state.behaviour == ElevatorBehaviour::Idle {
-                                    self.start_moving_local();
-                                }
-                            }
+                        if self.state.behaviour == ElevatorBehaviour::Idle {
+                            self.send_state_update();
                         }
                     }
                 } // cbc::select
