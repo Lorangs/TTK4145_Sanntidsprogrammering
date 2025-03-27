@@ -106,6 +106,7 @@ pub fn spawn_thread_for_master_connection(
                                 .unwrap();
                         }
                     }
+                    let mut buf = [0; 128];
                     if stream.peek(&mut buf).expect("peek failed") == 0 {
                         dprintln!("[SLAVE]\t\tLost connection to master");
                         let msg = Message::Error(ErrorState::Network);
