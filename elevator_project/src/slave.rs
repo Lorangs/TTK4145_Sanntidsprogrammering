@@ -411,9 +411,8 @@ impl Slave {
                         let message = msg.unwrap();
                         match message {
                             io_datastructures::Message::NewOrder(callbutton) => {
-                                if self.state.behaviour != ElevatorBehaviour::OutOfOrder { //trur den må fjernast får å kunne ta ordre på veien, men fekk ikkje det til
+                                if self.state.behaviour == ElevatorBehaviour::Idle {
                                     self.nxt_order = callbutton;
-                                    //dprintln!("[SLAVE]\t\tReceived new order from master: {:#?}", callbutton);
                                     dprintln!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
                                     if self.state.floor == self.nxt_order.floor {
                                         self.set_behaviour(ElevatorBehaviour::DoorOpen);
@@ -431,14 +430,13 @@ impl Slave {
                             },
                             io_datastructures::Message::LightMatrix(matrix) => {
                                 self.light_matrix = matrix;
-                                //dprintln!("[SLAVE]\t\tReceived light matrix");
                                 self.sync_hall_lights();
                             },
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
                             io_datastructures::Message::StateUpdate(state) => {
                                 for i in 0..NUMBER_OF_FLOORS {
                                     if state.cab_requests[i] {
-                                        self.state.cab_requests[i] = state.cab_requests[i]; //sånn at den behelde dei ordrane den hadde i localt modus
+                                        self.state.cab_requests[i] = state.cab_requests[i]; 
                                     }
                                 }
                                 self.send_state_update();

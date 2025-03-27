@@ -154,10 +154,22 @@ impl OrderRequests {
                         }
                     }
                     Direction::Stop => {
-                        // First check floors above current position
+                        
+                        //First do cab calls
+                        for i in elevator.floor..NUMBER_OF_FLOORS as u8  {
+                            if let Some(button) = check_button(i,CAB) {
+                                return Ok(Some(button));
+                            }
+                        }
+                        for i in (0..elevator.floor).rev()   {
+                            if let Some(button) = check_button(i,CAB) {
+                                return Ok(Some(button));
+                            }
+                        }
+                        // Then check floors above current position
                         for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
                             // Check all button types
-                            for call_type in [HALL_UP, HALL_DOWN, CAB] {
+                            for call_type in [HALL_UP, HALL_DOWN] {
                                 if let Some(button) = check_button(i, call_type) {
                                     return Ok(Some(button));
                                 }
@@ -208,7 +220,7 @@ impl Master {
         let mut master = Master {
             config: config.clone(),
             requests: Arc::new(Mutex::new(order_requests)),
-            slave_channels: Arc::new(Mutex::new([const { None }; NUMBER_OF_ELEVATORS])), // spørsmål??? Ditta ville ikkje compile på mi maskin
+            slave_channels: Arc::new(Mutex::new([const { None }; NUMBER_OF_ELEVATORS])),
             master_to_backup_tx: None,
             backup_disconected_rx: cbc::unbounded().1,
         };
