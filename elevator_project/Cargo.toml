@@ -16,3 +16,8 @@ opt-level = 0
 
 [profile.release]
 opt-level = 3
+
+[toolchain]
+channel = "nightly"
+
+#![feature(tcp_linger)]
