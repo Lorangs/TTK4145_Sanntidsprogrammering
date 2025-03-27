@@ -13,7 +13,7 @@ use std::time::Duration;
 use crate::config::{Config, BUFFER_SIZE, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
 use crate::io_datastructures::{ElevatorBehaviour, ErrorState, Message, OrderRequests};
 
-/// Sttruct for Master unit
+/// Struct for Master unit
 #[derive(Debug)]
 pub struct Master {
     pub config: Config,
@@ -26,8 +26,8 @@ pub struct Master {
 
 impl Master {
 
-    /// Initialize a new master unit.
-    /// Will start as a lone master if no backup is found.
+    /// Initialize a new master unit
+    /// Will start as a lone master if no backup is found
     pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, String> {
         let mut master = Master {
             config: config.clone(),
@@ -86,7 +86,7 @@ impl Master {
                             master_to_slave_rx,
                         );
 
-                        // send previous cab orders to slave
+                        // Send previous cab orders to slave
                         dprintln!("[MASTER]\tSending previous orders to slave");
                         locked_channel[slave_number]
                             .as_ref()
@@ -128,7 +128,7 @@ impl Master {
         Message::LightMatrix(new_matrix)
     }
 
-    /// Sends the updated order requests to the backup server.
+    /// Sends the updated order requests to the backup server
     fn update_backup(&self, requests: OrderRequests) -> Result<(), ErrorState> {
         if self.master_to_backup_tx.is_some() {
             match self
@@ -151,7 +151,7 @@ impl Master {
         Err(ErrorState::Network)
     }
 
-    /// Main application loop for master (state machine).
+    /// Main application loop for master (state machine)
     pub fn master_loop(&mut self) {
         loop {
             if self.backup_disconected_rx.try_recv().is_ok() {
@@ -266,7 +266,7 @@ impl Master {
                                 }
                             }
 
-                            // Removes an disconected slave
+                            // Removes a disconected slave
                             Message::Error(e) => match e {
                                 ErrorState::Network => {
                                     self.requests.lock().unwrap().states[slave_number].behaviour =
@@ -319,7 +319,8 @@ impl Master {
         }
     }
 
-    /// Tries to connect to a new backup server. If connection is found, a new backup channel is set. If no connection is found, the function will try again in the next iteration.
+    /// Tries to connect to a new backup server. If connection is found, a new backup channel is set
+    /// If no connection is found, the function will try again in the next iteration
     fn try_connect_to_new_backup(&mut self) {
         let backup_ip_list: Vec<SocketAddr> = self
             .config
@@ -386,6 +387,7 @@ fn spawn_thread_for_slave_connection(
 
     // TTL is set to 3 to avoid packages being forwarded to other networks
     stream.set_ttl(3).expect("Failed to set TTL on stream");
+    // Dissables the Nagle's algorithm to reduce latency.
     stream
         .set_nodelay(true)
         .expect("Failed to set nodelay on stream");
@@ -441,6 +443,7 @@ fn spawn_thread_for_backup_connection(
 ) {
     // TTL is set to 3 to avoid packages being forwarded to other networks
     stream.set_ttl(3).expect("Failed to set TTL on stream");
+    // Dissables the Nagle's algorithm to reduce latency.
     stream
         .set_nodelay(true)
         .expect("Failed to set nodelay on stream");
