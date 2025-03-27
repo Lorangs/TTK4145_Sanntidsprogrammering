@@ -1,6 +1,5 @@
 use crate::config::NUMBER_OF_FLOORS;
 use crate::master::OrderRequests;
-use crate::slave::ElevatorState;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 
@@ -54,3 +53,96 @@ impl FmtDisplay for ErrorState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ElevatorBehaviour {
+    Idle,
+    Moving,
+    DoorOpen,
+    OutOfOrder,
+}
+impl ElevatorBehaviour{
+    pub fn to_hall_assigner_lowercase(self) -> &'static str{
+        match self {
+            ElevatorBehaviour::Idle         => "idle",
+            ElevatorBehaviour::Moving       => "moving",
+            ElevatorBehaviour::DoorOpen     => "doorOpen",
+            ElevatorBehaviour::OutOfOrder   => "outOfOrder",
+        }
+    }
+}
+impl FmtDisplay for ElevatorBehaviour {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!(
+            f,
+            "{}",
+            match self {
+                ElevatorBehaviour::Idle        => "Idle",
+                ElevatorBehaviour::Moving      => "Moving",
+                ElevatorBehaviour::DoorOpen    => "DoorOpen",
+                ElevatorBehaviour::OutOfOrder  => "OutOfOrder",
+            }
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum Direction {
+    Down = -1,
+    Stop = 0,
+    Up = 1,
+}
+impl Direction {
+    pub fn to_hall_assigner_lowercase(self) -> &'static str{
+        match self {
+            Direction::Down => "down",
+            Direction::Stop => "stop",
+            Direction::Up => "up",
+        }
+    }
+}
+impl FmtDisplay for Direction {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!(
+            f,
+            "{}",
+            match self {
+                Direction::Down => "Down",
+                Direction::Stop => "Stop",
+                Direction::Up   => "Up",
+            }
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ElevatorState {
+    pub behaviour: ElevatorBehaviour,
+    pub floor: u8,
+    pub direction: Direction,
+    pub cab_requests: [bool; NUMBER_OF_FLOORS],
+}
+impl ElevatorState {
+
+    /// Initialize ElevatorState to default values
+    pub fn init() -> ElevatorState {
+        ElevatorState {
+            behaviour: ElevatorBehaviour::OutOfOrder,
+            floor: 0,
+            direction: Direction::Stop,
+            cab_requests: [false; NUMBER_OF_FLOORS],
+        }
+    }
+}
+impl FmtDisplay for ElevatorState {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!(
+            f,
+            "ElevatorState:\n\t
+            Behaviour:\t{}\n\t
+            Floor:\t\t{}\n\t
+            Directoin:\t{}\n\t
+            CabRequests:\t{:?}",
+            self.behaviour, self.floor, self.direction, self.cab_requests
+        )
+    }
+}

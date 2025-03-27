@@ -1,108 +1,13 @@
 use crate::config::{Config, NUMBER_OF_FLOORS};
 use crate::inputs;
-use crate::io_datastructures::{CallButton, Message, ErrorState};
+use crate::io_datastructures::{CallButton, Message, ErrorState, ElevatorState, ElevatorBehaviour, Direction};
 use crossbeam_channel as cbc;
 use debug_print::debug_println as dprintln;
 use driver_rust::elevio::elev::{self as e, CAB, DIRN_DOWN, DIRN_STOP, DIRN_UP, HALL_DOWN, HALL_UP};
-use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum ElevatorBehaviour {
-    Idle,
-    Moving,
-    DoorOpen,
-    OutOfOrder,
-}
-impl ElevatorBehaviour{
-    pub fn to_hall_assigner_lowercase(self) -> &'static str{
-        match self {
-            ElevatorBehaviour::Idle => "idle",
-            ElevatorBehaviour::Moving => "moving",
-            ElevatorBehaviour::DoorOpen => "doorOpen",
-            ElevatorBehaviour::OutOfOrder => "outOfOrder",
-        }
-    }
-}
-impl Display for ElevatorBehaviour {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "{}",
-            match self {
-                ElevatorBehaviour::Idle        => "Idle",
-                ElevatorBehaviour::Moving      => "Moving",
-                ElevatorBehaviour::DoorOpen    => "DoorOpen",
-                ElevatorBehaviour::OutOfOrder  => "OutOfOrder",
-            }
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum Direction {
-    Down = -1,
-    Stop = 0,
-    Up = 1,
-}
-impl Direction {
-    pub fn to_hall_assigner_lowercase(self) -> &'static str{
-        match self {
-            Direction::Down => "down",
-            Direction::Stop => "stop",
-            Direction::Up => "up",
-        }
-    }
-}
-impl Display for Direction {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "{}",
-            match self {
-                Direction::Down => "Down",
-                Direction::Stop => "Stop",
-                Direction::Up   => "Up",
-            }
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct ElevatorState {
-    pub behaviour: ElevatorBehaviour,
-    pub floor: u8,
-    pub direction: Direction,
-    pub cab_requests: [bool; NUMBER_OF_FLOORS],
-}
-impl ElevatorState {
-
-    /// Initialize ElevatorState to default values
-    pub fn init() -> ElevatorState {
-        ElevatorState {
-            behaviour: ElevatorBehaviour::OutOfOrder,
-            floor: 0,
-            direction: Direction::Stop,
-            cab_requests: [false; NUMBER_OF_FLOORS],
-        }
-    }
-}
-impl Display for ElevatorState {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "ElevatorState:\n\t
-            Behaviour:\t{}\n\t
-            Floor:\t\t{}\n\t
-            Directoin:\t{}\n\t
-            CabRequests:\t{:?}",
-            self.behaviour, self.floor, self.direction, self.cab_requests
-        )
-    }
-}
 
 #[derive(Debug)]
 pub struct Slave {

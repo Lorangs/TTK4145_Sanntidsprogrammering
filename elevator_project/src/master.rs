@@ -17,8 +17,7 @@ use std::result::Result;
 use std::io::Error;
 
 use crate::config::{Config, BUFFER_SIZE, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
-use crate::slave::{Direction, ElevatorBehaviour, ElevatorState};
-use crate::io_datastructures::{self, CallButton, Message, ErrorState};
+use crate::io_datastructures::{self, CallButton, Message, ErrorState, ElevatorState, Direction, ElevatorBehaviour};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
