@@ -10,7 +10,7 @@ use crate::config::BUFFER_SIZE;
 use debug_print::debug_println as dprintln;
 
 
-// Struct containing all the rx channels from the elevator io driver. 
+// Struct containing all the rx channels from the elevator io driver to the Slave unit. 
 #[derive(Debug, Clone)]
 pub struct SlaveChannels {
     pub floor_sensor_rx : cbc::Receiver<u8>,
@@ -18,18 +18,15 @@ pub struct SlaveChannels {
     pub stop_button_rx  : cbc::Receiver<bool>,
     pub obstruction_rx  : cbc::Receiver<bool>,
 }
-
 impl FmtDisplay for SlaveChannels {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         write!(
             f,
-            "SlaveChannels {{
-    floor_sensor_rx: {:?},
-    call_button_rx: {:?},
-    stop_button_rx: {:?},
-    obstruction_rx: {:?},
-
-}}",
+            "SlaveChannels:\n\t
+            floor_sensor_rx:\t{:?}\n\t
+            call_button_rx:\t{:?}\n\t
+            stop_button_rx:\t{:?}\n\t
+            obstruction_rx:\t{:?}",
             self.floor_sensor_rx,
             self.call_button_rx,
             self.stop_button_rx,
@@ -39,7 +36,7 @@ impl FmtDisplay for SlaveChannels {
     }
 }
 
-// Spawns threads for all the slave input channels and returns a SlaveChannels struct. 
+/// Spawns threads for all the slave input channels and returns a SlaveChannels struct. 
 pub fn spawn_threads_for_slave_inputs
 (
     elevator: &elevio::elev::Elevator,
@@ -79,7 +76,8 @@ pub fn spawn_threads_for_slave_inputs
     }
 }
 
-
+/// Spawns a thread for channels handling the TcpStream connection to the master.
+/// Returns a tuple with the sender and receiver for the channels.
 pub fn spawn_thread_for_master_connection
 (
     mut stream: TcpStream,
@@ -91,8 +89,6 @@ pub fn spawn_thread_for_master_connection
     let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded::<Message>();
 
     stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
-    //stream.set_read_timeout(Some(poll_period)).expect("Failed to set read timeout");
-    //stream.set_write_timeout(Some(poll_period)).expect("Failed to set write timeout");
     stream.set_nodelay(true).expect("Failed to set nodelay"); // Gjør store forbedringer i ytelse. Må være true
     stream.set_ttl(3).expect("Failed to set ttl");
 
@@ -113,7 +109,7 @@ pub fn spawn_thread_for_master_connection
                     }
                 }
                 Err(_e) => {
-                    //dprintln!("[SLAVE]\t\tFailed to receive message from channel: {}", e);
+                    // No message received on channel. Continue.
                     continue;
                 }
             }
@@ -128,9 +124,10 @@ pub fn spawn_thread_for_master_connection
                 }
                 Err(e) => {
                     match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            // dprintln!("[SLAVE]\t\tNo data available");
-                        }
+                        // WouldBlock is expected when no data is available to read.
+                        std::io::ErrorKind::WouldBlock => {},
+
+                        // Treat all other errors as network errors.
                         _ => {
                             dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
                             master_to_slave_tx.send(Message::Error(ErrorState::Network)).unwrap();
@@ -142,4 +139,13 @@ pub fn spawn_thread_for_master_connection
         }
     });
     (slave_to_master_tx, master_to_slave_rx)
+}
+
+
+/// Spawn a new thread that will sleep for the given duration and then send a message to the door_timer channel when done. 
+pub fn start_timer(tx: cbc::Sender<bool>, duration: u64) {
+    spawn(move || {
+        sleep(Duration::from_secs(duration));
+        let _ = tx.send(true).unwrap();
+    });
 }

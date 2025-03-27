@@ -4,8 +4,8 @@ use std::process::Command;
 use debug_print::debug_println as dprintln;
 
 
-// Main func for backup. Initializes backup. If backup crashes, it will restart and connect to a new master. 
-// We need to seperate between the backup crashing: restart as backup, and master crashing: start a master.
+/// Main func for backup. Initializes backup. If backup crashes, it will restart and connect to a new master. 
+/// We seperate between the backup crashing: restart as backup, and master crashing: start a master.
 fn main() {
     let config = Config::read_config(Path::new("config.json")).unwrap();
 
@@ -15,7 +15,7 @@ fn main() {
     match order_requests {
         Ok(order_requests) => {
             Command::new("cargo")
-                .args(["run", "--bin", "master_main", order_requests.to_custom_json().as_str()])
+                .args(["run", "--bin", "master_main", order_requests.to_json_string().as_str()])
                 .spawn()
                 .expect("Failed to start master_main");
         }

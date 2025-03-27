@@ -28,6 +28,8 @@ pub struct OrderRequests {
 }
 
 impl OrderRequests {
+
+    /// Initialize the OrderRequests struct with empty hall requests and elevator states.
     pub fn init() -> OrderRequests {
         let hall_requests    : [[bool; 2]; NUMBER_OF_FLOORS] = [[false; 2]; NUMBER_OF_FLOORS ];
         let states          : [ ElevatorState; NUMBER_OF_ELEVATORS ] = [ ElevatorState::init(); NUMBER_OF_ELEVATORS ];
@@ -38,7 +40,8 @@ impl OrderRequests {
         }
     }  
 
-    pub fn update_hall_requests(&mut self, call: tcp::CallButton, add_or_remove: bool) { // true for add, false for remove
+    /// Update the hall requests with a new call button. true for add, false for remove
+    pub fn update_hall_requests(&mut self, call: tcp::CallButton, add_or_remove: bool) { 
         match call.call {
             HALL_UP => {
                 self.hall_requests[call.floor as usize][0] = add_or_remove;
@@ -147,17 +150,31 @@ impl OrderRequests {
         return None; 
     }
     
-
-    pub fn to_custom_json(&self) -> String {
+    /// Serialize the OrderRequests struct to a JSON string.
+    pub fn to_json_string(&self) -> String {
         match serde_json::to_string(&self){
             Ok(json) => json,
             Err(e) => {
                 dprintln!("[MASTER]\tFailed to serialize OrderRequests to JSON: {}", e);
+                dprintln!("[MASTER]\tReturning empty JSON string");
                 String::new()
             }
         }
     }
+    
+    /// Deserialize the OrderRequests struct from a JSON string.
+    pub fn from_json_string(string: &str) -> OrderRequests {
+        match serde_json::from_str(string){
+            Ok(order_requests) => order_requests,
+            Err(e) => {
+                dprintln!("[MASTER]\tFailed to deserialize OrderRequests from JSON: {}", e);
+                dprintln!("[MASTER]\tReturning empty OrderRequests");
+                OrderRequests::init()
+            }
+        }
+    }
 }
+
 
 
 impl FmtDisplay for OrderRequests {
