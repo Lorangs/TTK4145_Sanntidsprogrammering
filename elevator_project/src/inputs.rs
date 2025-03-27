@@ -150,6 +150,6 @@ pub fn spawn_thread_for_master_connection
 pub fn start_timer(tx: cbc::Sender<bool>, duration: u64) {
     spawn(move || {
         sleep(Duration::from_secs(duration));
-        let _ = tx.send(true).unwrap();
+        tx.send(true).unwrap();
     });
 }

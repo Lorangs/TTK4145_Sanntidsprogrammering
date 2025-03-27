@@ -1,14 +1,14 @@
 use crate::config::{NUMBER_OF_FLOORS, NUMBER_OF_ELEVATORS};
+use driver_rust::elevio::elev::{CAB, HALL_DOWN, HALL_UP};
 use debug_print::debug_println as dprintln;
 use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
 use std::io::Error;
 use std::process::Command;
 use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
-use driver_rust::elevio::elev::{CAB, HALL_DOWN, HALL_UP};
 
+/// Enum for messages sent over TCP between the different units.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
     NewOrder(CallButton),
@@ -21,16 +21,17 @@ pub enum Message {
 impl FmtDisplay for Message {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
-            Message::NewOrder(call_button) => write!(f, "New Order: {}", call_button),
+            Message::NewOrder(call_button)      => write!(f, "New Order: {}", call_button),
             Message::OrderComplete(call_button) => write!(f, "Order complete: {}", call_button),
-            Message::StateUpdate(state) => write!(f, "State update: {}", state),
-            Message::LightMatrix(_matrix) => write!(f, "Light matrix"),
-            Message::Backup(b) => write!(f, "Backup: {:#?}", b),
-            Message::Error(id) => write!(f, "Error: {}", id),
+            Message::StateUpdate(state)      => write!(f, "State update: {}", state),
+            Message::LightMatrix(_matrix)   => write!(f, "Light matrix"),
+            Message::Backup(b)               => write!(f, "Backup: {:#?}", b),
+            Message::Error(id)                  => write!(f, "Error: {}", id),
         }
     }
 }
 
+/// Struct for call buttons pushed by users.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub struct CallButton {
     pub floor: u8,
@@ -42,13 +43,12 @@ impl FmtDisplay for CallButton {
     }
 }
 
-
+/// Enum for custom error states.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ErrorState {
     EmergancyStop,
     Network,
 }
-
 impl FmtDisplay for ErrorState {
     fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
         match self {
@@ -58,6 +58,7 @@ impl FmtDisplay for ErrorState {
     }
 }
 
+/// Enum for the different behaviour the elevator can have.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ElevatorBehaviour {
     Idle,
@@ -90,6 +91,7 @@ impl FmtDisplay for ElevatorBehaviour {
     }
 }
 
+/// Enum for the different directions the elevator can move.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Direction {
     Down = -1,
@@ -119,6 +121,7 @@ impl FmtDisplay for Direction {
     }
 }
 
+/// Struct for the state of the elevator. This include the behaviour, floor, direction and local cab requests.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ElevatorState {
     pub behaviour: ElevatorBehaviour,
@@ -152,6 +155,7 @@ impl FmtDisplay for ElevatorState {
     }
 }
 
+/// Struct for all requests from every connected slave.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OrderRequests {
     pub hall_requests: [[bool; 2]; NUMBER_OF_FLOORS],

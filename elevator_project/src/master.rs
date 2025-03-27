@@ -305,7 +305,15 @@ impl Master {
                             }
                         }
                     }
-                    Err(_) => {}
+                    Err(e) => {
+                        match e {
+                            cbc::TryRecvError::Empty => {}
+                            cbc::TryRecvError::Disconnected => {
+                                dprintln!("[MASTER]\tSlave {} disconnected", slave_number);
+                                locked_channels[slave_number] = None;
+                            }
+                        }
+                    }
                 }
             }
 
