@@ -85,6 +85,8 @@ pub fn spawn_thread_for_master_connection(
         .expect("Failed to set non-blocking mode on stream");
     stream.set_nodelay(true).expect("Failed to set nodelay"); // Gjør store forbedringer i ytelse. Må være true
     stream.set_ttl(3).expect("Failed to set ttl");
+    stream.set_linger(Some(Duration::from_secs(1)))
+        .expect("Failed to set linger on stream");
 
     spawn(move || {
         let mut encoded: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
@@ -121,7 +123,10 @@ pub fn spawn_thread_for_master_connection(
                             // Connection is still alive
                         }
                         Err(e) => {
-                            dprintln!("[SLAVE]\t\tFailed to peek stream. Lossy.. {}", e);
+                            dprintln!("[SLAVE]\t\tFailed to peek stream: {}", e);
+                            master_to_slave_tx
+                                .send(Message::Error(ErrorState::Network))
+                                .unwrap();
                         }
                     }
                 }
