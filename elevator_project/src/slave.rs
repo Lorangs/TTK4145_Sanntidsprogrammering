@@ -83,6 +83,7 @@ impl Slave {
             }
         }
 
+
         slave.try_connect_to_new_master();
 
         if slave.master_channels.is_none() {
@@ -99,9 +100,9 @@ impl Slave {
     fn try_connect_to_new_master(&mut self) {
         for ip_addr in &self.config.elevator_ip_list {
             let socket_addr =
-                std::net::SocketAddr::new(std::net::IpAddr::V4(*ip_addr), self.config.master_port);
+                std::net::SocketAddrV4::new(*ip_addr, self.config.master_port);
 
-            match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(1)) {
+            match TcpStream::connect(socket_addr) {
                 Ok(stream) => {
                     dprintln!(
                         "[SLAVE]\t\tConnected to master at {}:{}",
