@@ -9,14 +9,14 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let config = Config::read_config(Path::new("config.json")).unwrap();
 
-    let mut order_requests_json = OrderRequests::init();
+    let mut order_requests = OrderRequests::init();
 
     println!("Argument: {}",args.len());
 
     if args.len() != 1 {
         //master was started by a backup
-        order_requests_json = serde_json::from_str(&args[1]).unwrap();
-        dprintln!("[MASTER]\tOrder requests: {:?}", order_requests_json);
+        order_requests = serde_json::from_str(&args[1]).unwrap();
+        dprintln!("[MASTER]\tOrder requests: {:?}", order_requests);
     }
     else{
         dprintln!("I am a new master");

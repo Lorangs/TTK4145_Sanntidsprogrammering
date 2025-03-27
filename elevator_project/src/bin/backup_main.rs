@@ -10,11 +10,11 @@ fn main() {
     let config = Config::read_config(Path::new("config.json")).expect("Failed to read config.json");
 
     let mut backup = Backup::init(&config).expect("Failed to initialize backup");
-    let masterqueues_result = backup.backup_loop();
+    let order_requests = backup.backup_loop();
     
-    match masterqueues_result {
+    match order_requests {
         //Backup loop ended because it lost conection to master -> start a new master
-        Ok(masterqueues) => {
+        Ok(order_requests) => {
             Command::new("cargo")
                 .args(["run", "--bin", "master_main", order_requests.to_json_string().as_str()])
                 .spawn()

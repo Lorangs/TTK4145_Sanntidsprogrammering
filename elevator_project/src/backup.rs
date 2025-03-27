@@ -13,7 +13,7 @@ use crate::io_datastructures::{ErrorState, Message};
 
 pub struct Backup {
     orders: OrderRequests,
-    master_to_backup_rx: cbc::Receiver<tcp::Message>,
+    master_to_backup_rx: cbc::Receiver<Message>,
 }
 
 impl Backup {
@@ -56,11 +56,11 @@ impl Backup {
             match self.master_to_backup_rx.recv() {
                 Ok(message) => {
                     match message {
-                        tcp::Message::Backup(data) => {
+                        Message::Backup(data) => {
                             self.orders = data;
                             dprintln!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
                         }
-                        tcp::Message::Error(tcp::ErrorState::Network) => {
+                        Message::Error(ErrorState::Network) => {
                             //We asume that most errors ocure becouse of error in the master, so we start a new master. 
                             //Worst case is we start a second master, but this will give an error so the master will not fully initialize, and instead start a new backup anyway
                             dprintln!("[BACKUP]\tMaster disconnected");
@@ -82,7 +82,7 @@ impl Backup {
 /// Spawn a new thread that will read from the TcpStream and send the message to the master_to_backup_tx channel.
 fn spawn_thread_for_master_connection(
     mut stream: TcpStream,
-    master_to_backup_tx: cbc::Sender<tcp::Message>,
+    master_to_backup_tx: cbc::Sender<Message>,
 ) 
 {
     spawn ( move || {
@@ -94,49 +94,50 @@ fn spawn_thread_for_master_connection(
         
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
-    loop {
-        match stream.read(&mut buffer) {
-            Ok(size) => {
-                if size > 0 {
-                    let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
-                        .expect("Failed to deserialize message");
-                    dprintln!("[BACKUP]\tReceived message from master: {:#?}", msg);
-                    match master_to_backup_tx.send(msg) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
-                            break;
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(size) => {
+                    if size > 0 {
+                        let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
+                            .expect("Failed to deserialize message");
+                        dprintln!("[BACKUP]\tReceived message from master: {:#?}", msg);
+                        match master_to_backup_tx.send(msg) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
+                                break;
+                            }
                         }
-                    }
-                } else {
-                    dprintln!("[BACKUP]\tLost conection to master");
-                    let msg = Message::Error(ErrorState::Network);
-                    match master_to_backup_tx.send(msg) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
-                            break;
+                    } else {
+                        dprintln!("[BACKUP]\tLost conection to master");
+                        let msg = Message::Error(ErrorState::Network);
+                        match master_to_backup_tx.send(msg) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::WouldBlock {
-                    // No data available, continue the loop
-                    continue;
-                } else {
-                    // Connection lost or other error
-                    dprintln!("[BACKUP]\tError: {}", e);
-                    let msg = Message::Error(ErrorState::Network);
-                    match master_to_backup_tx.send(msg) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::WouldBlock {
+                        // No data available, continue the loop
+                        continue;
+                    } else {
+                        // Connection lost or other error
+                        dprintln!("[BACKUP]\tError: {}", e);
+                        let msg = Message::Error(ErrorState::Network);
+                        match master_to_backup_tx.send(msg) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
+                            }
                         }
+                        break;
                     }
-                    break;
                 }
             }
         }
-    }
+    });
 }

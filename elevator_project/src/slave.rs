@@ -1,6 +1,6 @@
 use crate::config::{Config, NUMBER_OF_FLOORS};
 use crate::inputs;
-use crate::io_datastructures;
+use crate::io_datastructures::{CallButton, Message, ErrorState};
 use crossbeam_channel as cbc;
 use debug_print::debug_println as dprintln;
 use driver_rust::elevio::elev::{self as e, CAB, DIRN_DOWN, DIRN_STOP, DIRN_UP, HALL_DOWN, HALL_UP};
@@ -8,10 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
-use crate::config::{Config, NUMBER_OF_FLOORS};
-use crate::inputs;
-use crate::tcp;
-use debug_print::debug_println as dprintln;
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -74,19 +70,6 @@ impl Display for Direction {
         )
     }
 }
-impl Display for Direction {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "{}",
-            match self {
-                Direction::Down => "Down",
-                Direction::Stop => "Stop",
-                Direction::Up   => "Up",
-            }
-        )
-    }
-}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ElevatorState {
@@ -96,6 +79,8 @@ pub struct ElevatorState {
     pub cab_requests: [bool; NUMBER_OF_FLOORS],
 }
 impl ElevatorState {
+
+    /// Initialize ElevatorState to default values
     pub fn init() -> ElevatorState {
         ElevatorState {
             behaviour: ElevatorBehaviour::OutOfOrder,
@@ -105,7 +90,6 @@ impl ElevatorState {
         }
     }
 }
-
 impl Display for ElevatorState {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
@@ -127,9 +111,9 @@ pub struct Slave {
     pub state: ElevatorState,
     obstruction: bool,
     stop_button: bool,
-    nxt_order: io_datastructures::CallButton,
+    nxt_order: CallButton,
     channels: inputs::SlaveChannels,
-    master_channels: Option<(cbc::Sender<io_datastructures::Message>, cbc::Receiver<io_datastructures::Message>)>, // If None the elevator is in local mode
+    master_channels: Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>, // If None the elevator is in local mode
     door_timer: (cbc::Sender<bool>, cbc::Receiver<bool>),
     motor_timeout: (cbc::Sender<bool>, cbc::Receiver<bool>),                             
     timestamp_prev_floor: Instant,                                                              // Timestamp for when the elevator last passed a floor
@@ -141,8 +125,13 @@ impl Slave {
     /// Initialize a new slave unit
     pub fn init(config: &Config) -> Slave {
         let conf: Config = config.clone();
-        let elev: e::Elevator = e::Elevator::init(&slave_addr, NUMBER_OF_FLOORS as u8)
-            .expect("[SLAVE]\t\tFailed to initialize elevator");
+        let elev: e::Elevator = 
+            e::Elevator::init
+                (
+                    ("localhost:".to_string() + config.elevator_port.to_string().as_str()).as_str(),
+                    NUMBER_OF_FLOORS as u8
+                )
+                .expect("[SLAVE]\t\tFailed to initialize elevator");
 
         let chs: inputs::SlaveChannels =
             inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms);
@@ -150,7 +139,7 @@ impl Slave {
         let mut slave = Self {
             config: conf,
             elevator: elev,
-            nxt_order: io_datastructures::CallButton { floor: 0, call: 0 },
+            nxt_order: CallButton { floor: 0, call: 0 },
             state: ElevatorState::init(),
             obstruction: false,
             stop_button: false,
@@ -249,8 +238,8 @@ impl Slave {
     }
 
     /// Send new order to master
-    fn send_new_order(&mut self, callbutton: tcp::CallButton) {
-        let message = tcp::Message::NewOrder(callbutton.clone());
+    fn send_new_order(&mut self, callbutton: CallButton) {
+        let message = Message::NewOrder(callbutton.clone());
 
         if self.master_channels.is_none() {
             dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -282,7 +271,7 @@ impl Slave {
         self.sync_cab_lights();
 
         if self.nxt_order.call != CAB {
-            let message = io_datastructures::Message::OrderComplete(self.nxt_order);
+            let message = Message::OrderComplete(self.nxt_order);
 
             if self.master_channels.is_none() {
                 dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -302,7 +291,7 @@ impl Slave {
 
     /// Send emergancy stop message to master
     fn send_stop_button(&mut self) {
-        let message = io_datastructures::Message::Error(io_datastructures::ErrorState::EmergancyStop);
+        let message = Message::Error(ErrorState::EmergancyStop);
 
         if self.master_channels.is_none() {
             dprintln!("[SLAVE]\t\tNo master found. Cannot send order.");
@@ -349,7 +338,7 @@ impl Slave {
             return;
         }
 
-        let message = io_datastructures::Message::StateUpdate(self.state);
+        let message = Message::StateUpdate(self.state);
         match self.master_channels.as_mut().unwrap().0.send(message) {
             Ok(_) => {}
             Err(e) => {
@@ -401,7 +390,7 @@ impl Slave {
                     // Receive call buttons from elevator
                     recv(self.channels.call_button_rx) -> msg => {
                         let call_button = msg.unwrap();
-                        let new_call = io_datastructures::CallButton { floor: call_button.floor, call: call_button.call };
+                        let new_call = CallButton { floor: call_button.floor, call: call_button.call };
                         dprintln!("[SLAVE]\t\tReceived call button message: {:#?}", new_call);
                         self.send_new_order(new_call);
                     }
@@ -459,7 +448,7 @@ impl Slave {
                     recv(self.master_channels.clone().unwrap().1) -> msg => {
                         let message = msg.unwrap();
                         match message {
-                            io_datastructures::Message::NewOrder(callbutton) => {
+                            Message::NewOrder(callbutton) => {
                                 if self.state.behaviour == ElevatorBehaviour::Idle {
                                     self.nxt_order = callbutton;
                                     dprintln!("[SLAVE]\t floor: {:#?}, nxt_order: {:#?}", self.state.floor, self.nxt_order.floor);
@@ -477,13 +466,13 @@ impl Slave {
                                    dprintln!("[SLAVE]\t\tReceived new order, but elevator is not idle");
                                 }
                             },
-                            io_datastructures::Message::LightMatrix(matrix) => {
+                            Message::LightMatrix(matrix) => {
                                 self.light_matrix = matrix;
                                 self.sync_hall_lights();
                                 dprintln!("[SLAVE]\t\tReceived light matrix");
                             },
                             // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
-                            io_datastructures::Message::StateUpdate(state) => {
+                            Message::StateUpdate(state) => {
                                 for i in 0..NUMBER_OF_FLOORS {
                                     if state.cab_requests[i] {
                                         self.state.cab_requests[i] = state.cab_requests[i]; 
@@ -492,7 +481,7 @@ impl Slave {
                                 self.send_state_update();
                                 dprintln!("[SLAVE]\t\tReceived state update");
                             },
-                            io_datastructures::Message::Error(_) => {
+                            Message::Error(_) => {
                                 dprintln!("[SLAVE]\t\tReceived error message from master");
                                 dprintln!("[SLAVE]\t\tStarting in local operating mode");
                                 self.master_channels = None;
@@ -628,7 +617,7 @@ impl Slave {
     fn orders_above(&mut self) -> bool{
         for floor in (self.state.floor + 1) .. NUMBER_OF_FLOORS as u8 {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = io_datastructures::CallButton {
+                self.nxt_order = CallButton {
                     floor,
                     call: CAB,
                 };
@@ -642,7 +631,7 @@ impl Slave {
     fn orders_below(&mut self) -> bool {
         for floor in 0..self.state.floor {
             if self.state.cab_requests[floor as usize] {
-                self.nxt_order = io_datastructures::CallButton {
+                self.nxt_order = CallButton {
                     floor,
                     call: CAB,
                 };
@@ -719,7 +708,7 @@ impl Slave {
     /// Start moving the elevator when in local operation mode
     fn start_moving_local(&mut self) {
         let (diraction, behaviour) = self.choose_direction();
-        self.nxt_order = io_datastructures::CallButton {
+        self.nxt_order = CallButton {
             floor: 1,
             call: CAB,
         };

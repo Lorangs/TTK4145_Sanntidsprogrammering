@@ -18,24 +18,13 @@ use std::io::Error;
 
 use crate::config::{Config, BUFFER_SIZE, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
 use crate::slave::{Direction, ElevatorBehaviour, ElevatorState};
-use crate::io_datastructures::{self, CallButton, Message};
+use crate::io_datastructures::{self, CallButton, Message, ErrorState};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OrderRequests {
     pub hall_requests: [[bool; 2]; NUMBER_OF_FLOORS],
     pub states: [ElevatorState; NUMBER_OF_ELEVATORS],
-}
-
-impl FmtDisplay for OrderRequests {
-    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
-        write!(
-            f,
-            "Hall queue: {:?}\n\
-            Cab queues: {:?}",
-            self.hall_requests, self.states
-        )
-    }
 }
 
 impl OrderRequests {
@@ -52,7 +41,7 @@ impl OrderRequests {
     }
 
     /// Update the hall requests with a new call button. true for add, false for remove
-    pub fn update_hall_requests(&mut self, call: tcp::CallButton, add_or_remove: bool) { 
+    pub fn update_hall_requests(&mut self, call: CallButton, add_or_remove: bool) { 
         match call.call {
             HALL_UP => {
                 self.hall_requests[call.floor as usize][0] = add_or_remove;
@@ -321,7 +310,7 @@ impl Master {
     }
 
     /// Returns a 2 x num_floors matrix for updating panel lights. [hall_up, hall_down]
-    fn make_light_matrix(&self, requests: OrderRequests) -> tcp::Message {
+    fn make_light_matrix(&self, requests: OrderRequests) -> Message {
         let mut new_matrix = [[false; 2]; NUMBER_OF_FLOORS];
 
         for (floor, hall_call) in requests.hall_requests.iter().enumerate() {
@@ -597,7 +586,7 @@ fn spawn_thread_for_slave_connection(
                         std::io::ErrorKind::WouldBlock => {  }
                         _ => {
                             dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
-                            slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
+                            slave_to_master_tx.send(Message::Error(ErrorState::Network)).unwrap();
                         }
                     }
 
