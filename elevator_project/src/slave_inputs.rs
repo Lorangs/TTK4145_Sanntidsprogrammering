@@ -101,9 +101,9 @@ pub fn spawn_thread_for_master_connection(
                         }
                         Err(e) => {
                             dprintln!("[SLAVE]\t\tFailed to write to stream: {}", e);
-                            master_to_slave_tx
-                                .send(Message::Error(ErrorState::Network))
-                                .unwrap();
+                            // master_to_slave_tx
+                            //     .send(Message::Error(ErrorState::Network))
+                            //     .unwrap();
                         }
                     }
                     let mut buf = [0; 128];
