@@ -1,12 +1,12 @@
 use debug_print::debug_println as dprintln;
 use elevator_project::config::Config;
-use elevator_project::master::Master;
 use elevator_project::io_datastructures::OrderRequests;
+use elevator_project::master::Master;
 use std::env;
 use std::path::Path;
 use std::process::Command;
 
-/// Main function for the Master unit. 
+/// Main function for the Master unit.
 /// If starting from scratch takes no argument.
 /// Else, if started by a backup, takes a json string of type OrderRequests as input argument.
 fn main() {
@@ -15,14 +15,11 @@ fn main() {
 
     let mut order_requests = OrderRequests::init();
 
-    dprintln!("Argument:\t{}",args.len());
+    dprintln!("Argument:\t{}", args.len());
 
-    //master was started by a backup
     if args.len() != 1 {
         match serde_json::from_str(&args[1]) {
-            Ok(or) => {
-                order_requests = or
-            }
+            Ok(or) => order_requests = or,
             Err(_e) => {
                 Command::new("cargo")
                     .args(["run", "--bin", "master_main", &args[1]])
@@ -32,12 +29,10 @@ fn main() {
             }
         }
         dprintln!("[MASTER]\tOrder requests:\t{:?}", order_requests);
-    }
-    else{
+    } else {
         dprintln!("I am a new master");
     }
 
-    // Initialize master and start master loop.
     let mut master = Master::init(&config, order_requests).unwrap();
     dprintln!("[MASTER]\tMaster initialized");
     master.master_loop();

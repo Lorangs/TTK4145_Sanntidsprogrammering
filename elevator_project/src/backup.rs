@@ -1,27 +1,32 @@
 use bincode;
 use crossbeam_channel as cbc;
 use debug_print::debug_println as dprintln;
+use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
+use std::io::Error;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
-use std::io::Error;
-use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 
 use crate::config::{Config, BUFFER_SIZE};
 use crate::io_datastructures::{ErrorState, Message, OrderRequests};
 
+/// Struck for Backup unit.
 pub struct Backup {
     orders: OrderRequests,
     master_to_backup_rx: cbc::Receiver<Message>,
 }
 
 impl Backup {
-    // Loops unitl it connects to a master
+    
+    /// Initilize a new Backup.
+    /// Will loop until a master connection is established.
+    /// Returns a backup unit with a master connected. 
     pub fn init(config: &Config) -> Result<Backup, Error> {
         dprintln!("[BACKUP]\tInitializing backup");
 
         loop {
+            // listen for all incoming connection on ip adress 0.0.0.0:backupPort.
             let listener: TcpListener =
                 TcpListener::bind("0.0.0.0".to_string() + ":" + &config.backup_port.to_string())?;
             for stream in listener.incoming() {
@@ -37,12 +42,12 @@ impl Backup {
                         };
 
                         spawn_thread_for_master_connection(stream, master_to_backup_tx);
-        
+
                         dprintln!("[BACKUP]\tConnected to master");
-                        return Ok(backup)
+                        return Ok(backup);
                     }
                     Err(e) => {
-                        dprintln!("Error: {}", e);
+                        dprintln!("[BACKUP]\tError:\t{}", e);
                         sleep(Duration::from_secs(2));
                     }
                 }
@@ -60,9 +65,11 @@ impl Backup {
                             self.orders = data;
                             dprintln!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
                         }
+
+                        // We asume that most errors ocure becouse of error in the master, so we start a new master.
+                        // Worst case is we start a second master, but this will give an error so the master
+                        // will not fully initialize, and instead start a new backup anyway
                         Message::Error(ErrorState::Network) => {
-                            //We asume that most errors ocure becouse of error in the master, so we start a new master. 
-                            //Worst case is we start a second master, but this will give an error so the master will not fully initialize, and instead start a new backup anyway
                             dprintln!("[BACKUP]\tMaster disconnected");
                             return Ok(self.orders.clone());
                         }
@@ -78,15 +85,13 @@ impl Backup {
     }
 }
 impl FmtDisplay for Backup {
-    fn fmt(&self, f : &mut FmtFormatter) -> FmtResult {
-        write!
-        (
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!(
             f,
             "Backup:\n\
             \tStored orders:\t{}\n\
             \tMaster channel:{:?}",
-            self.orders,
-            self.master_to_backup_rx
+            self.orders, self.master_to_backup_rx
         )
     }
 }
@@ -95,15 +100,17 @@ impl FmtDisplay for Backup {
 fn spawn_thread_for_master_connection(
     mut stream: TcpStream,
     master_to_backup_tx: cbc::Sender<Message>,
-) 
-{
-    spawn ( move || {
-
+) {
+    spawn(move || {
         // TTL is set to 3 to prevent packets from being forwarded to other networks
         stream.set_ttl(3).expect("Failed to set TTL on stream");
-        stream.set_nodelay(true).expect("Failed to set nodelay on stream");
-        stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
-        
+        stream
+            .set_nodelay(true)
+            .expect("Failed to set nodelay on stream");
+        stream
+            .set_nonblocking(true)
+            .expect("Failed to set non-blocking mode on stream");
+
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
         loop {
