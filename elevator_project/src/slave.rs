@@ -461,8 +461,20 @@ impl Slave {
                         }
                     }
                     default(Duration::from_millis(self.config.input_poll_rate_ms*100)) => {
-                        if self.state.behaviour == ElevatorBehaviour::Idle {
-                            self.send_state_update();
+                        // Check if the master is still reachable
+                        if let Some((tx, _)) = &self.master_channels {
+                            if tx.send(Message::StateUpdate(self.state)).is_err() {
+                                dprintln!("[SLAVE]\t\tMaster connection lost. Switching to local mode.");
+                                self.master_channels = None;
+                                // Turn off all hall lights
+                                for i in 0..NUMBER_OF_FLOORS {
+                                    self.elevator.call_button_light(i as u8, HALL_UP, false);
+                                    self.elevator.call_button_light(i as u8, HALL_DOWN, false);
+                                }
+                                if self.state.behaviour == ElevatorBehaviour::Idle {
+                                    self.start_moving_local();
+                                }
+                            }
                         }
                     }
                 } // cbc::select

@@ -14,9 +14,6 @@ fn main() {
     slave.slave_loop();
     dprintln!("[SLAVE]\t\tslave failed, restarting slave\n");
 
-    //drop(slave);
-    //sleep(Duration::from_secs(1)); Testa uten dei og det funka, men har lyst å teste en gang til før eg sletta
-
     Command::new("cargo")
         .args(["run", "--bin", "slave_main"])
         .spawn()
