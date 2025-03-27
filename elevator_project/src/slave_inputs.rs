@@ -87,7 +87,6 @@ pub fn spawn_thread_for_master_connection(
         .expect("Failed to set non-blocking mode on stream");
     stream.set_nodelay(true).expect("Failed to set nodelay"); // Gjør store forbedringer i ytelse. Må være true
     stream.set_ttl(3).expect("Failed to set ttl");
-    stream.set_linger(Some(Duration::from_secs(0))).expect("Failed to set linger");
 
     spawn(move || {
         let mut encoded: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
@@ -105,6 +104,17 @@ pub fn spawn_thread_for_master_connection(
                             master_to_slave_tx
                                 .send(Message::Error(ErrorState::Network))
                                 .unwrap();
+                        }
+                    }
+                    if stream.peek(&mut buf).expect("peek failed") == 0 {
+                        dprintln!("[SLAVE]\t\tLost connection to master");
+                        let msg = Message::Error(ErrorState::Network);
+                        match master_to_slave_tx.send(msg) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                dprintln!("[SLAVE]\t\tFailed to send message to master: {}", e);
+                                break;
+                            }
                         }
                     }
                 }
