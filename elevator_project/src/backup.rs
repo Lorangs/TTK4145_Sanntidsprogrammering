@@ -8,8 +8,7 @@ use std::time::Duration;
 use std::io::Error;
 
 use crate::config::{Config, BUFFER_SIZE};
-use crate::master::OrderRequests;
-use crate::io_datastructures::{ErrorState, Message};
+use crate::io_datastructures::{ErrorState, Message, OrderRequests};
 
 pub struct Backup {
     orders: OrderRequests,

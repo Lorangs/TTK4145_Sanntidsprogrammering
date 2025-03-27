@@ -1,6 +1,7 @@
 use debug_print::debug_println as dprintln;
 use elevator_project::config::Config;
-use elevator_project::master::{Master, OrderRequests};
+use elevator_project::master::Master;
+use elevator_project::io_datastructures::OrderRequests;
 use std::env;
 use std::path::Path;
 use std::process::Command;
