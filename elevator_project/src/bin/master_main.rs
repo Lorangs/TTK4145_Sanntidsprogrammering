@@ -16,7 +16,16 @@ fn main() {
 
     if args.len() != 1 {
         //master was started by a backup
-        order_requests = serde_json::from_str(&args[1]).unwrap();
+        match (order_requests = serde_json::from_str(&args[1])){
+            Ok()=>{}
+            Err()=>{
+                Command::new("cargo")
+                    .args(["run", "--bin", "master_main", args[1]])
+                    .spawn()
+                    .expect("Failed to start master_main");
+                return;
+            }
+        }
         dprintln!("[MASTER]\tOrder requests: {:?}", order_requests);
     }
     else{
