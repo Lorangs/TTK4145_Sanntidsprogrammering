@@ -1,18 +1,18 @@
+use debug_print::debug_println as dprintln;
 use elevator_project::config::Config;
 use elevator_project::master::{Master, OrderRequests};
-use std::path::Path;
 use std::env;
+use std::path::Path;
 use std::process::Command;
-use debug_print::debug_println as dprintln;
-
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let config = Config::read_config(Path::new("config.json")).unwrap();
 
-    let mut order_requests_json=OrderRequests::init();
+    let mut order_requests_json = OrderRequests::init();
 
-    if args.len() > 2 { //master was started by a slave
+    if args.len() > 2 {
+        //master was started by a slave
         order_requests_json = serde_json::from_str(&args[1]).unwrap();
         dprintln!("[MASTER]\tOrder requests: {:?}", order_requests_json);
     }

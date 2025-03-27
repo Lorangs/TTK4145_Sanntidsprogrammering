@@ -4,9 +4,9 @@ use std::process::Command;
 use debug_print::debug_println as dprintln;
 
 fn main() {
-    let config = Config::read_config(Path::new("config.json")).unwrap();
+    let config = Config::read_config(Path::new("config.json")).expect("Failed to read config.json");
 
-    let mut backup = Backup::init(&config);
+    let mut backup = Backup::init(&config).expect("Failed to initialize backup");
     let masterqueues_result = backup.backup_loop();
     
     match masterqueues_result {

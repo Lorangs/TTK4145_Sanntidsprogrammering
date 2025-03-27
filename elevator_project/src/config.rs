@@ -1,37 +1,35 @@
-
+use debug_print::debug_println as dprintln;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::fs::File;
 use std::io::{BufReader, Error};
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::result::Result;
-use debug_print::debug_println as dprintln;
 
-
-// Constant variables for the elevator system
-// Struggled to put these in the config file due to compile time errors
-pub const NUMBER_OF_FLOORS      : usize = 4;
-pub const NUMBER_OF_ELEVATORS   : usize = 3;
-pub const BUFFER_SIZE           : usize = 128;
+// Constant variables for the elevator system. 
+// Struggled to put these in the config file due to compile time errors. Should be possible to fix. Build script?
+pub const NUMBER_OF_FLOORS: usize = 4;
+pub const NUMBER_OF_ELEVATORS: usize = 3;
+pub const BUFFER_SIZE: usize = 128;
 
 // Custom serde module for Vec<Ipv4Addr> serialization/deserialization
 mod ipv4_address_vec {
-    use serde::{Deserialize, Deserializer, Serializer, Serialize};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 
     use super::NUMBER_OF_ELEVATORS;
 
-    pub fn serialize<S>(addresses: &[Ipv4Addr;NUMBER_OF_ELEVATORS], serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(
+        addresses: &[Ipv4Addr; NUMBER_OF_ELEVATORS],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         // Convert Ipv4Addr to strings for serialization
-        let str_addresses: Vec<String> = addresses
-            .iter()
-            .map(|addr| addr.to_string())
-            .collect();
+        let str_addresses: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
         str_addresses.serialize(serializer)
     }
 
@@ -40,7 +38,7 @@ mod ipv4_address_vec {
         D: Deserializer<'de>,
     {
         let str_addresses: Vec<String> = Vec::deserialize(deserializer)?;
-        
+
         // Convert strings to Ipv4Addr
         let vec: Result<Vec<Ipv4Addr>, _> = str_addresses
             .iter()
@@ -65,19 +63,17 @@ mod ipv4_address_vec {
     }
 }
 
-
-// Maps the config file to a struct
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
     #[serde(with = "ipv4_address_vec")]
-    pub elevator_ip_list        : [Ipv4Addr; NUMBER_OF_ELEVATORS],
-    pub master_port             : u16,
-    pub backup_port             : u16,
-    pub slave_port              : u16,
-    pub door_open_duration_s    : u64,
-    pub input_poll_rate_ms      : u64,
-    pub tcp_timeout_ms          : u64,
-    pub est_moving_time_s       : u64 
+    pub elevator_ip_list: [Ipv4Addr; NUMBER_OF_ELEVATORS],
+    pub master_port: u16,
+    pub backup_port: u16,
+    pub elevator_port: u16,
+    pub door_open_duration_s: u64,
+    pub input_poll_rate_ms: u64,
+    pub tcp_timeout_ms: u64,
+    pub est_moving_time_s: u64,
 }
 
 impl Display for Config {
@@ -87,7 +83,7 @@ impl Display for Config {
             "Elevator IP list:\t\t{:?}\n\
             Master port:\t\t\t{}\n\
             Backup port:\t\t\t{}\n\
-            Slave port:\t\t\t{}\n\
+            Elevator port:\t\t\t{}\n\
             Door open duration [s]:\t\t{}\n\
             Input poll rate [ms]:\t\t{}\n\
             TCP timeout [ms]:\t\t{}
@@ -95,7 +91,7 @@ impl Display for Config {
             self.elevator_ip_list,
             self.master_port,
             self.backup_port,
-            self.slave_port,
+            self.elevator_port,
             self.door_open_duration_s,
             self.input_poll_rate_ms,
             self.tcp_timeout_ms,
@@ -106,17 +102,17 @@ impl Display for Config {
 
 impl Config {
     pub fn read_config(path: &Path) -> Result<Config, Error> {
-        dprintln!("[CONFIG]\tReading config file");
+        dprintln!("[CONFIG]\t\tReading config file");
         let file = match File::open(path) {
             Ok(file) => file,
             Err(e) => {
-                panic!("[CONFIG]\tFailed to open file: {}", e);
+                panic!("[CONFIG]\t\tFailed to open file: {}", e);
             }
         };
         let reader = BufReader::new(file);
         let config: Config = serde_json::from_reader(reader)?;
 
-        dprintln!("[CONFIG]\tConfig loaded successfully:\n{}", config);
-        return Ok(config);
+        dprintln!("[CONFIG]\t\tConfig loaded successfully:\n{}", config);
+        Ok(config)
     }
 }
