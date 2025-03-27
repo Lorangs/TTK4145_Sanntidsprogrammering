@@ -11,18 +11,18 @@ use std::time::{Duration, Instant};
 
 #[derive(Debug)]
 pub struct Slave {
-    pub config: Config,
-    pub elevator: e::Elevator,
-    pub state: ElevatorState,
-    obstruction: bool,
-    stop_button: bool,
-    nxt_order: CallButton,
-    channels: inputs::SlaveChannels,
-    master_channels: Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>, // If None the elevator is in local mode
-    door_timer: (cbc::Sender<bool>, cbc::Receiver<bool>),
-    motor_timeout: (cbc::Sender<bool>, cbc::Receiver<bool>),                             
-    timestamp_prev_floor: Instant,                                                              // Timestamp for when the elevator last passed a floor
-    light_matrix: [[bool; 2]; NUMBER_OF_FLOORS],  // [Hall_UP, Hall_DOWN] for each floor
+    pub config              : Config,
+    pub elevator            : e::Elevator,
+    pub state               : ElevatorState,
+    obstruction             : bool,
+    stop_button             : bool,
+    nxt_order               : CallButton,
+    channels                : inputs::SlaveChannels,
+    master_channels         : Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>,               // If None the elevator is in local mode
+    door_timer              : (cbc::Sender<bool>, cbc::Receiver<bool>),
+    motor_timeout           : (cbc::Sender<bool>, cbc::Receiver<bool>),                             
+    timestamp_prev_floor    : Instant,                                                              // Timestamp for when the elevator last passed a floor
+    light_matrix            : [[bool; 2]; NUMBER_OF_FLOORS],                                        // [Hall_UP, Hall_DOWN] for each floor
 }
 
 impl Slave {
@@ -42,18 +42,18 @@ impl Slave {
             inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms);
 
         let mut slave = Self {
-            config: conf,
-            elevator: elev,
-            nxt_order: CallButton { floor: 0, call: 0 },
-            state: ElevatorState::init(),
-            obstruction: false,
-            stop_button: false,
-            channels: chs,
-            master_channels: None,
-            door_timer: cbc::unbounded::<bool>(),
-            motor_timeout: cbc::unbounded::<bool>(),
-            timestamp_prev_floor: Instant::now(),
-            light_matrix: [[false; 2]; NUMBER_OF_FLOORS],
+            config                  : conf,
+            elevator                : elev,
+            nxt_order               : CallButton { floor: 0, call: 0 },
+            state                   : ElevatorState::init(),
+            obstruction             : false,
+            stop_button             : false,
+            channels                : chs,
+            master_channels         : None,
+            door_timer              : cbc::unbounded::<bool>(),
+            motor_timeout           : cbc::unbounded::<bool>(),
+            timestamp_prev_floor    : Instant::now(),
+            light_matrix            : [[false; 2]; NUMBER_OF_FLOORS],
         };
 
         // Turns all lights off
@@ -167,7 +167,6 @@ impl Slave {
             _ => panic!("Mottok ukjent knappetype"),
         }
     }
-
 
     /// Send order complete message to master
     fn send_order_complete(&mut self) {
@@ -288,8 +287,6 @@ impl Slave {
                             self.send_order_complete();
                             inputs::start_timer(self.door_timer.0.clone(), self.config.door_open_duration_s); 
                         }
-
-
                     }
 
                     // Receive call buttons from elevator
@@ -376,7 +373,7 @@ impl Slave {
                                 self.sync_hall_lights();
                                 dprintln!("[SLAVE]\t\tReceived light matrix");
                             },
-                            // Receive state update from master. Used to syncronize the state of the elevator when reconnecting to the master.
+                            // Receive state update from master. Used to syncronize the state of the elevator when connecting to a new master.
                             Message::StateUpdate(state) => {
                                 for i in 0..NUMBER_OF_FLOORS {
                                     if state.cab_requests[i] {
@@ -410,8 +407,8 @@ impl Slave {
                         }
                     }
                 } // cbc::select
-            }
-            // if
+            }// if
+
 
             /************** local operation mode ***************/
             else {
@@ -652,7 +649,8 @@ impl Display for Slave {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
-            "\tElevator:\t{:#?}\n\
+            "Slave:\n\
+            \tElevator:\t{:#?}\n\
             \tState:\t{:#?}\n\
             \tNxt_order:\t{:#?}\n\
             \tObstruction:\t{:#?}\n\

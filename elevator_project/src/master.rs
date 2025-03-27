@@ -1,222 +1,19 @@
 use crossbeam_channel as cbc;
-use driver_rust::elevio::elev::{CAB, HALL_DOWN, HALL_UP};
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
 use bincode;
 use debug_print::debug_println as dprintln;
-use std::collections::HashMap;
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
-use std::process::Command;
 use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Duration;
 use std::result::Result;
-use std::io::Error;
+
 
 use crate::config::{Config, BUFFER_SIZE, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
-use crate::io_datastructures::{self, CallButton, Message, ErrorState, ElevatorState, Direction, ElevatorBehaviour};
+use crate::io_datastructures::{Message, ErrorState, ElevatorBehaviour, OrderRequests};
 
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OrderRequests {
-    pub hall_requests: [[bool; 2]; NUMBER_OF_FLOORS],
-    pub states: [ElevatorState; NUMBER_OF_ELEVATORS],
-}
-
-impl OrderRequests {
-
-    /// Initialize the OrderRequests struct with empty hall requests and elevator states.
-    pub fn init() -> OrderRequests {
-        let hall_requests: [[bool; 2]; NUMBER_OF_FLOORS] = [[false; 2]; NUMBER_OF_FLOORS];
-        let states: [ElevatorState; NUMBER_OF_ELEVATORS] = [ElevatorState::init(); NUMBER_OF_ELEVATORS];
-
-        OrderRequests {
-            hall_requests,
-            states,
-        }
-    }
-
-    /// Update the hall requests with a new call button. true for add, false for remove
-    pub fn update_hall_requests(&mut self, call: CallButton, add_or_remove: bool) { 
-        match call.call {
-            HALL_UP => {
-                self.hall_requests[call.floor as usize][0] = add_or_remove;
-            }
-            HALL_DOWN => {
-                self.hall_requests[call.floor as usize][1] = add_or_remove;
-            }
-            _ => {
-                dprintln!("[MASTER]\tGot cab call from slave. Exiting");
-            }
-        }
-    }
-
-    /// Run the optimization algorithm an return the next order for the slave.
-    pub fn get_next_order(&mut self, slave_number: usize) -> Result<Option<CallButton>, Error> {
-        let hall_requests: Vec<Value> = self
-            .hall_requests
-            .iter()
-            .map(|x| json!([x[0], x[1]]))
-            .collect();
-
-        let mut states = Map::new();
-        for (key, state) in self.states.iter().enumerate() {
-            if state.behaviour != ElevatorBehaviour::OutOfOrder {
-                let state_object = json!({
-                    "floor": state.floor,
-                    "behaviour": state.behaviour.to_hall_assigner_lowercase(),
-                    "direction": state.direction.to_hall_assigner_lowercase(),
-                    "cabRequests": state.cab_requests,
-                    });
-                states.insert(key.to_string(), state_object);
-            }
-        }
-
-        let result = json!({
-            "hallRequests": hall_requests,
-            "states": states,
-        });
-
-
-        let input = serde_json::to_string(&result)?;
-
-        let output = Command::new("../hall_request_assigner")
-            .args(["--includeCab", "--input"])
-            .arg(input)
-            .output()?;
-
-            let orders: HashMap<String, Vec<[bool; 3]>> = if output.status.success() {
-                serde_json::from_slice(&output.stdout)?
-            } else {
-                return Ok(None);
-            };
-
-        
-            // Prøvde å skrive om denne delen for mindre repetetiv kode + error-handling. Logikk må verifiseres
-            let elevator = self.states[slave_number];
-            if elevator.behaviour != ElevatorBehaviour::OutOfOrder {
-                let elevator_orders = match orders.get(&slave_number.to_string()) {
-                    Some(orders) => orders,
-                    None => {
-                        dprintln!("[MASTER]\tNo orders found for slave {}", slave_number);
-                        return Ok(None);
-                    }
-                };
-            
-                // Helper function to check and create call button
-                let check_button = |floor: u8, call_type: u8| -> Option<CallButton> {
-                    if floor < NUMBER_OF_FLOORS as u8 && 
-                       call_type < 3 && 
-                       elevator_orders[floor as usize][call_type as usize] {
-                        Some(CallButton { floor, call: call_type })
-                    } else {
-                        None
-                    }
-                };
-            
-                match elevator.direction {
-                    Direction::Down => {
-                        for i in (0..elevator.floor).rev() {
-                            // First check hall down buttons (same direction)
-                            if let Some(button) = check_button(i, HALL_DOWN) {
-                                return Ok(Some(button));
-                            }
-                            // Then check cab buttons
-                            if let Some(button) = check_button(i, CAB) {
-                                return Ok(Some(button));
-                            }
-                        }
-                    }
-                    Direction::Up => {
-                        // Check floors above current position
-                        for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
-                            // First check hall up buttons (same direction)
-                            if let Some(button) = check_button(i, HALL_UP) {
-                                return Ok(Some(button));
-                            }
-                            // Then check cab buttons
-                            if let Some(button) = check_button(i, CAB) {
-                                return Ok(Some(button));
-                            }
-                        }
-                    }
-                    Direction::Stop => {
-                        
-                        //First do cab calls
-                        for i in elevator.floor..NUMBER_OF_FLOORS as u8  {
-                            if let Some(button) = check_button(i,CAB) {
-                                return Ok(Some(button));
-                            }
-                        }
-                        for i in (0..elevator.floor).rev()   {
-                            if let Some(button) = check_button(i,CAB) {
-                                return Ok(Some(button));
-                            }
-                        }
-                        // Then check floors above current position
-                        for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
-                            // Check all button types
-                            for call_type in [HALL_UP, HALL_DOWN] {
-                                if let Some(button) = check_button(i, call_type) {
-                                    return Ok(Some(button));
-                                }
-                            }
-                        }
-                        
-                        // Then check floors below current position
-                        for i in (0..elevator.floor).rev() {
-                            // Check all button types
-                            for call_type in [HALL_UP, HALL_DOWN, CAB] {
-                                if let Some(button) = check_button(i, call_type) {
-                                    return Ok(Some(button));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(None)
-        }
-    
-    /// Serialize the OrderRequests struct to a JSON string.
-    pub fn to_json_string(&self) -> String {
-        match serde_json::to_string(&self){
-            Ok(json) => json,
-            Err(e) => {
-                dprintln!("[MASTER]\tFailed to serialize OrderRequests to JSON: {}", e);
-                dprintln!("[MASTER]\tReturning empty JSON string");
-                String::new()
-            }
-        }
-    }
-    
-    /// Deserialize the OrderRequests struct from a JSON string.
-    pub fn from_json_string(string: &str) -> OrderRequests {
-        match serde_json::from_str(string){
-            Ok(order_requests) => order_requests,
-            Err(e) => {
-                dprintln!("[MASTER]\tFailed to deserialize OrderRequests from JSON: {}", e);
-                dprintln!("[MASTER]\tReturning empty OrderRequests");
-                OrderRequests::init()
-            }
-        }
-    }
-}
-impl FmtDisplay for OrderRequests {
-    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
-        write!(
-            f,
-            "OrderRequests:\n\t
-            Hall queue:\t{:?}\n\t
-            Cab queues:\t{:?}",
-            self.hall_requests, 
-            self.states
-        )
-    }
-}
 
 #[derive(Debug)]
 pub struct Master {
@@ -332,7 +129,7 @@ impl Master {
     }
 
     /// Sends the updated order requests to the backup server.
-    fn update_backup(&self, requests: OrderRequests) -> Result<(), io_datastructures::ErrorState> {
+    fn update_backup(&self, requests: OrderRequests) -> Result<(), ErrorState> {
         if self.master_to_backup_tx.is_some() {
             match self
                 .master_to_backup_tx
@@ -346,12 +143,12 @@ impl Master {
                 }
                 Err(_) => {
                     dprintln!("[MASTER]\tFailed to send order to backup");
-                    return Err(io_datastructures::ErrorState::Network);
+                    return Err(ErrorState::Network);
                 }
             }
         }
         dprintln!("[MASTER]\tNo backup connected, asuming I am the onely pc in operation");
-        Err(io_datastructures::ErrorState::Network)
+        Err(ErrorState::Network)
     }
 
     /// Main application loop for master (state machine).
@@ -472,7 +269,7 @@ impl Master {
 
                             // Removes an disconected slave
                             Message::Error(e) => match e {
-                                io_datastructures::ErrorState::Network => {
+                                ErrorState::Network => {
                                     self.requests.lock().unwrap().states[slave_number].behaviour =
                                         ElevatorBehaviour::OutOfOrder;
 
@@ -485,7 +282,7 @@ impl Master {
                                     dprintln!("[MASTER]\tSlave {} disconnected", slave_number);
                                     locked_channels[slave_number] = None;
                                 }
-                                io_datastructures::ErrorState::EmergancyStop => {
+                                ErrorState::EmergancyStop => {
                                     dprintln!(
                                         "[MASTER]\tSlave {} has emergancy stop",
                                         slave_number
@@ -551,13 +348,31 @@ impl Master {
         }
     }
 }
-
+impl FmtDisplay for Master {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!
+        (
+            f, 
+            "Master:\n
+            \tConfig:\t{}\n
+            \tRequests:\t{:?}\n
+            \tSlave channels:\t{:?}\n
+            \tMaster to backup tx:\t{:?}\n
+            \tBackup disconected rx:\t{:?}\n",
+            self.config,
+            self.requests,
+            self.slave_channels,
+            self.master_to_backup_tx,
+            self.backup_disconected_rx
+        )
+    }
+}
 
 /// Spawns a thread for handling the TcpStream connection to a slave.
 fn spawn_thread_for_slave_connection(
     mut stream: TcpStream,
-    slave_to_master_tx: cbc::Sender<io_datastructures::Message>,
-    master_to_slave_rx: cbc::Receiver<io_datastructures::Message>,
+    slave_to_master_tx: cbc::Sender<Message>,
+    master_to_slave_rx: cbc::Receiver<Message>,
 ) {
     let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
@@ -600,7 +415,7 @@ fn spawn_thread_for_slave_connection(
                         Ok(_) => {}
                         Err(_e) => {
                             slave_to_master_tx
-                            .send(Message::Error(io_datastructures::ErrorState::Network))
+                            .send(Message::Error(ErrorState::Network))
                             .unwrap();
                         }
                     }
@@ -614,29 +429,10 @@ fn spawn_thread_for_slave_connection(
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /// Spawns a thread for handling the TcpStream connection to a backup.
 fn spawn_thread_for_backup_connection(
     mut stream: TcpStream,
-    master_to_backup_rx: cbc::Receiver<io_datastructures::Message>,
+    master_to_backup_rx: cbc::Receiver<Message>,
     backup_disconected_tx: cbc::Sender<bool>,
 ) {
     // TTL is set to 3 to avoid packages being forwarded to other networks
