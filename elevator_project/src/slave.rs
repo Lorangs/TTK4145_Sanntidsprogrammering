@@ -24,7 +24,7 @@ pub struct Slave {
     master_channels: Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>, // If None the elevator is in local mode
     door_timer: (cbc::Sender<bool>, cbc::Receiver<bool>),
     motor_timeout: (cbc::Sender<bool>, cbc::Receiver<bool>),
-    timestamp_prev_floor: Instant, // Timestamp for when the elevator last passed a floor
+    timestamp_prev_floor: Instant, 
     light_matrix: [[bool; 2]; NUMBER_OF_FLOORS], // [Hall_UP, Hall_DOWN] for each floor
 }
 
