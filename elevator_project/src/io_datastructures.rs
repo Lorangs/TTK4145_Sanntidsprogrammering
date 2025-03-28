@@ -224,7 +224,7 @@ impl OrderRequests {
 
         let input = serde_json::to_string(&result)?;
 
-        let output = Command::new("../hall_request_assigner")
+        let output = Command::new("./hall_request_assigner/hall_request_assigner")
             .args(["--includeCab", "--input"])
             .arg(input)
             .output()?;

@@ -81,7 +81,7 @@ impl Display for Config {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
-            "Config:\n\
+            "Config:\n\t\
             Elevator IP list:\t\t{:?}\n\t\
             Master port:\t\t\t{}\n\t\
             Backup port:\t\t\t{}\n\t\
