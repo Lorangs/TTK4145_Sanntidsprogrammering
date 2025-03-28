@@ -1,250 +1,88 @@
-use crossbeam_channel as cbc;
-use driver_rust::elevio::elev::{HALL_DOWN, HALL_UP, CAB};
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value, Map};
-
 use bincode;
+use crossbeam_channel as cbc;
+use debug_print::debug_println as dprintln;
 use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtResult};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream, TcpListener, Ipv4Addr};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::result::Result;
 use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Duration;
-use std::process::Command;
-use std::collections::HashMap;
-use debug_print::debug_println as dprintln;
 
+use crate::config::{Config, BUFFER_SIZE, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
+use crate::io_datastructures::{ElevatorBehaviour, ErrorState, Message, OrderRequests};
+use crate::heartbeat;
+use network_rust::udpnet;
 
-use crate::config::{Config, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS, BUFFER_SIZE};
-use crate::tcp::{self, CallButton, Message};
-use crate::slave::{Direction, ElevatorState, ElevatorBehaviour};
-
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OrderRequests {
-    pub hall_requests       : [[bool; 2]; NUMBER_OF_FLOORS],   
-    pub states             : [ElevatorState; NUMBER_OF_ELEVATORS]
-}
-
-impl OrderRequests {
-
-    /// Initialize the OrderRequests struct with empty hall requests and elevator states.
-    pub fn init() -> OrderRequests {
-        let hall_requests    : [[bool; 2]; NUMBER_OF_FLOORS] = [[false; 2]; NUMBER_OF_FLOORS ];
-        let states          : [ ElevatorState; NUMBER_OF_ELEVATORS ] = [ ElevatorState::init(); NUMBER_OF_ELEVATORS ];
-
-        OrderRequests {
-            hall_requests,
-            states,
-        }
-    }  
-
-    /// Update the hall requests with a new call button. true for add, false for remove
-    pub fn update_hall_requests(&mut self, call: tcp::CallButton, add_or_remove: bool) { 
-        match call.call {
-            HALL_UP => {
-                self.hall_requests[call.floor as usize][0] = add_or_remove;
-            }
-            HALL_DOWN => {
-                self.hall_requests[call.floor as usize][1] = add_or_remove;
-            }
-            _ => {
-                dprintln!("[MASTER]\tGot cab call from slave. Exeting");
-                return;
-            }
-        }
-    }
-
-    /// Run the optimization algorithm.
-    /// Return the next order for the slaves
-    pub fn get_next_order(&mut self, slave_number: usize) -> Option<CallButton> {
-
-        // Konverter hall_requests (Vec<(bool, bool)>) til en JSON-array av arrays.
-        let hall_requests: Vec<Value> = self.hall_requests
-            .iter()
-            .map(|x| json!([x[0], x[1]]))
-            .collect();
-
-        let mut states = Map::new();
-        for (key, state) in self.states.iter().enumerate() {
-            if state.behaviour != ElevatorBehaviour::OutOfOrder {
-                let state_object = json!({
-                    "floor": state.floor,
-                    "behaviour": state.behaviour.to_hall_assigner_lowercase(),
-                    "direction": state.direction.to_hall_assigner_lowercase(),
-                    "cabRequests": state.cab_requests,
-                    });
-                states.insert(key.to_string(), state_object);
-            }
-        }
-
-        let result = json!({
-            "hallRequests": hall_requests,
-            "states": states,
-        }); 
-        
-        let input = serde_json::to_string(&result).unwrap();
-        
-        let output = Command::new("../hall_request_assigner")
-            .args(["--includeCab", "--input"])
-            .arg(input)
-            .output()
-            .expect("Failed to start hall_request_assigner");
-    
-        let orders: HashMap<String, Vec<[bool; 3]>>;
-        if output.status.success() {
-            orders = serde_json::from_slice(&output.stdout).unwrap();
-        } 
-        else { return None; }
-        
-        let elevator= self.states[slave_number].clone();
-        if elevator.behaviour != ElevatorBehaviour::OutOfOrder {
-            match elevator.direction {
-                Direction::Down => {
-                    for i in (0..elevator.floor).rev() {
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                    }
-                }
-                Direction::Up => {
-                    for i in elevator.floor..NUMBER_OF_FLOORS as u8 {
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                    }
-                }
-                Direction::Stop => {
-                    for i in elevator.floor..NUMBER_OF_FLOORS as u8{
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
-                    }// har 2 for loop sånn at den tar nermaste ordrane først, men blei litt masse kode
-                    for i in (0..elevator.floor).rev() {
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_UP as usize]{
-                            return Some(CallButton { floor: i as u8, call: HALL_UP });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][CAB as usize] {
-                            return Some(CallButton { floor: i as u8, call: CAB });
-                        }
-                        if orders.get(&slave_number.to_string()).unwrap()[i as usize][HALL_DOWN as usize] {
-                            return Some(CallButton { floor: i as u8, call: HALL_DOWN });
-                        }
-                    }
-                }
-            }
-        }
-        return None; 
-    }
-    
-    /// Serialize the OrderRequests struct to a JSON string.
-    pub fn to_json_string(&self) -> String {
-        match serde_json::to_string(&self){
-            Ok(json) => json,
-            Err(e) => {
-                dprintln!("[MASTER]\tFailed to serialize OrderRequests to JSON: {}", e);
-                dprintln!("[MASTER]\tReturning empty JSON string");
-                String::new()
-            }
-        }
-    }
-    
-    /// Deserialize the OrderRequests struct from a JSON string.
-    pub fn from_json_string(string: &str) -> OrderRequests {
-        match serde_json::from_str(string){
-            Ok(order_requests) => order_requests,
-            Err(e) => {
-                dprintln!("[MASTER]\tFailed to deserialize OrderRequests from JSON: {}", e);
-                dprintln!("[MASTER]\tReturning empty OrderRequests");
-                OrderRequests::init()
-            }
-        }
-    }
-}
-impl FmtDisplay for OrderRequests {
-    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
-        write!(
-            f,
-            "OrderRequests:\n\t
-            Hall queue:\t{:?}\n\t
-            Cab queues:\t{:?}",
-            self.hall_requests, 
-            self.states
-        )
-    }
-}
-
+/// Struct for Master unit
 #[derive(Debug)]
 pub struct Master {
-    pub config                      : Config,                                                                     
-    pub requests                    : Arc<Mutex<OrderRequests>>,                                         
-    slave_channels                  : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>>,   
-    master_to_backup_tx             : Option<cbc::Sender<Message>>,                                      
-    backup_disconected_rx           : cbc::Receiver<bool>,                                               
+    pub config: Config,
+    pub requests: Arc<Mutex<OrderRequests>>,
+    slave_channels:
+        Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>>,
+    master_to_backup_tx: Option<cbc::Sender<Message>>,
+    backup_disconected_rx: cbc::Receiver<bool>,
+    heartbeat_rx: cbc::Receiver<udpnet::peers::PeerUpdate>,
 }
 
 impl Master {
-
-    /// Initialize the a new master unit.
-    pub fn init
-    (
-        config: &Config, 
-        order_requests: OrderRequests
-    ) -> Result<Master, String> 
-    {
+    /// Initialize a new master unit
+    /// Will start as a lone master if no backup is found
+    pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, String> {
+        
+        let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
+        heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
+        
         let mut master = Master {
-            config                  : config.clone(),
-            requests                : Arc::new(Mutex::new(order_requests)),
-            slave_channels          : Arc::new(Mutex::new([const {None}; NUMBER_OF_ELEVATORS])),            // spørsmål???
-            master_to_backup_tx     : None,
-            backup_disconected_rx   : cbc::unbounded().1,
+            config: config.clone(),
+            requests: Arc::new(Mutex::new(order_requests)),
+            slave_channels: Arc::new(Mutex::new([const { None }; NUMBER_OF_ELEVATORS])),
+            master_to_backup_tx: None,
+            backup_disconected_rx: cbc::unbounded().1,
+            heartbeat_rx: heart_update_rx,
         };
 
         master.try_connect_to_new_backup();
 
-        let master_port             : u16 = config.master_port;
-        let ip_config_clone         : [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list.clone();
-        let slave_channels_clone    : Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS] >> = Arc::clone(&master.slave_channels);
-        let requests_clone          : Arc<Mutex<OrderRequests>> = Arc::clone(&master.requests);
+        heartbeat::send_alive("Master".to_string(),config.heartbeat_port);
+
+        let master_port: u16 = config.master_port;
+        let ip_config_clone: [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list;
+        let slave_channels_clone: Arc<
+            Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>,
+        > = Arc::clone(&master.slave_channels);
+        let requests_clone: Arc<Mutex<OrderRequests>> = Arc::clone(&master.requests);
 
         // Thread for listening for new slave connections
         spawn(move || {
-            let listener = // e de beire å bruke elevator ip list hær sånn at vi kan huske ordrane til heisa?
-            TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()).expect("Failed to bind");
+            let listener =
+                TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str())
+                    .expect("Failed to bind");
+
             for stream in listener.incoming() {
-                
                 let slave_number: usize;
-                match stream.as_ref().unwrap().peer_addr().unwrap().ip(){
-                    std::net::IpAddr::V4(ip) => { 
+                match stream.as_ref().unwrap().peer_addr().unwrap().ip() {
+                    std::net::IpAddr::V4(ip) => {
                         let ip = ip_config_clone.iter().position(|&x| x == ip).unwrap();
                         slave_number = ip;
-                    },
-                    std::net::IpAddr::V6(_ip) => { panic!("Fant IP_V6 adresse") }, // Panic for invalid ip
-                }; 
-                
+                    }
+                    std::net::IpAddr::V6(_ip) => {
+                        panic!("Fant IP_V6 adresse")
+                    } // Panic for invalid ip
+                };
+
                 let (master_to_slave_tx, master_to_slave_rx) = cbc::unbounded();
                 let (slave_to_master_tx, slave_to_master_rx) = cbc::unbounded();
-                
+
                 let mut locked_channel = slave_channels_clone.lock().unwrap();
                 locked_channel[slave_number] = Some((master_to_slave_tx, slave_to_master_rx));
-                
+
                 let locked_requests = requests_clone.lock().unwrap();
-                
+
                 dprintln!("[MASTER]\tGot new stream: {}", slave_number);
-                
+
                 match stream {
                     Ok(stream) => {
                         dprintln!(
@@ -252,78 +90,112 @@ impl Master {
                             stream.peer_addr().unwrap()
                         );
 
-                        spawn_thread_for_slave_connection(stream, slave_to_master_tx, master_to_slave_rx);
-                        
-                        // send previous cab orders to slave
+                        spawn_thread_for_slave_connection(
+                            stream,
+                            slave_to_master_tx,
+                            master_to_slave_rx,
+                        );
+
+                        // Send previous cab orders to slave
                         dprintln!("[MASTER]\tSending previous orders to slave");
                         locked_channel[slave_number]
-                        .as_ref()
-                        .unwrap()
-                        .0
-                        .send(Message::StateUpdate(locked_requests.states[slave_number]))
-                        .unwrap();
-                    drop(locked_requests);
-                    drop(locked_channel);
-                },
-                Err(_) => {
-                    dprintln!("[MASTER]\tFailed to establish connection to slave");
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .send(Message::StateUpdate(locked_requests.states[slave_number]))
+                            .unwrap();
+                        drop(locked_requests);
+                        drop(locked_channel);
+                    }
+                    Err(_) => {
+                        dprintln!("[MASTER]\tFailed to establish connection to slave");
+                    }
                 }
             }
-        }
-    });
-    Ok(master)
+        });
+        Ok(master)
     }
 
-    /// Returns a 2 x num_floors matrix for updating panel lights. [hall_up, hall_down]
-    fn make_light_matrix(&self, requests: OrderRequests) -> tcp::Message {
+    /// Returns a Message containing 2 x num_floors matrix for updating panel lights. [hall_up, hall_down]
+    fn make_light_matrix(&self, requests: OrderRequests) -> Message {
         let mut new_matrix = [[false; 2]; NUMBER_OF_FLOORS];
 
         for (floor, hall_call) in requests.hall_requests.iter().enumerate() {
             match hall_call {
-                [false, false] => {},
+                [false, false] => {}
                 [true, false] => {
                     new_matrix[floor][0] = true;
-                },
+                }
                 [false, true] => {
                     new_matrix[floor][1] = true;
-                },
+                }
                 [true, true] => {
                     new_matrix[floor][0] = true;
                     new_matrix[floor][1] = true;
                 }
             }
         }
-        
         Message::LightMatrix(new_matrix)
     }
 
-    /// Sends the updated order requests to the backup server.
-    fn update_backup(&self, requests: OrderRequests) -> Result<(), tcp::ErrorState>{
+    /// Sends the updated order requests to the backup server
+    fn update_backup(&self, requests: OrderRequests) -> Result<(), ErrorState> {
         if self.master_to_backup_tx.is_some() {
-            match self.master_to_backup_tx.as_ref().unwrap().send(Message::Backup(requests)) {
+            match self
+                .master_to_backup_tx
+                .as_ref()
+                .unwrap()
+                .send(Message::Backup(requests))
+            {
                 Ok(_) => {
                     dprintln!("[MASTER]\tSent order to backup");
                     return Ok(());
                 }
                 Err(_) => {
                     dprintln!("[MASTER]\tFailed to send order to backup");
-                    return Err(tcp::ErrorState::Network);
+                    return Err(ErrorState::Network);
                 }
             }
         }
         dprintln!("[MASTER]\tNo backup connected, asuming I am the onely pc in operation");
-        return Err(tcp::ErrorState::Network);
+        Err(ErrorState::Network)
     }
 
-    /// Main application loop for master (state machine).
+    /// Main application loop for master (state machine)
     pub fn master_loop(&mut self) {
         loop {
             if self.backup_disconected_rx.try_recv().is_ok() {
                 self.master_to_backup_tx = None;
             }
-            if self.master_to_backup_tx.is_none() { 
+            if self.master_to_backup_tx.is_none() {
                 self.try_connect_to_new_backup();
             }
+            match self.heartbeat_rx.try_recv() {
+                Ok(msg)=>{
+                    for ip in msg.lost{
+                        if ip=="Backup".to_string(){
+                            println!("Backup disconected");
+                            self.master_to_backup_tx = None;
+                        }
+                        else {
+                            println!("Slave {} disconected",ip);
+                            match ip.trim().parse::<usize>(){
+                                Ok(dead_slave) =>{
+                                    self.requests.lock().unwrap().states[dead_slave].behaviour =
+                                        ElevatorBehaviour::OutOfOrder;
+                                    match self.update_backup(self.requests.lock().unwrap().clone()) {
+                                        Ok(_) => {}
+                                        Err(_) => self.master_to_backup_tx = None,
+                                    }
+                                }
+                                Err(_) =>{dprintln!("[Master] Faled to parse slave number")}
+                            }
+                        }
+                    }
+                }
+                Err(_e)=>{} //No update yet
+            } 
+
 
             for slave_number in 0..NUMBER_OF_ELEVATORS {
                 let mut locked_channels = self.slave_channels.lock().unwrap();
@@ -332,7 +204,7 @@ impl Master {
                 if locked_channels[slave_number].is_none() {
                     continue;
                 }
-                
+
                 // if the slave is connected, check for messages:
                 match locked_channels[slave_number].clone().unwrap().1.try_recv() {
                     Ok(message) => {
@@ -340,11 +212,11 @@ impl Master {
                             Message::NewOrder(call_button) => {
                                 let mut locked_requests = self.requests.lock().unwrap();
                                 locked_requests.update_hall_requests(call_button, true);
-               
-                                dprintln!("[MASTER]\tAdded order to hall queue: {}",call_button);
 
-                                match self.update_backup(locked_requests.clone()){
-                                    Ok(_) => {},
+                                dprintln!("[MASTER]\tAdded order to hall queue: {}", call_button);
+
+                                match self.update_backup(locked_requests.clone()) {
+                                    Ok(_) => {}
                                     Err(_) => self.master_to_backup_tx = None,
                                 }
 
@@ -352,102 +224,129 @@ impl Master {
                                     if locked_channels[i].is_none() {
                                         continue;
                                     }
-                                    let light_matrix = self.make_light_matrix(locked_requests.clone());
-                                    locked_channels[i].clone().unwrap()
+                                    let light_matrix =
+                                        self.make_light_matrix(locked_requests.clone());
+                                    locked_channels[i]
+                                        .clone()
+                                        .unwrap()
                                         .0
                                         .send(light_matrix)
                                         .unwrap();
-                                    dprintln!("[MASTER]\tSent light matrix to slave {}",i);
+                                    dprintln!("[MASTER]\tSent light matrix to slave {}", i);
                                 }
                             }
 
                             Message::OrderComplete(call_button) => {
                                 let mut locked_requests = self.requests.lock().unwrap();
-                                locked_requests.update_hall_requests(call_button,false);
+                                locked_requests.update_hall_requests(call_button, false);
 
-                                match self.update_backup(locked_requests.clone()){
-                                    Ok(_) => {},
+                                match self.update_backup(locked_requests.clone()) {
+                                    Ok(_) => {}
                                     Err(_) => self.master_to_backup_tx = None,
                                 }
 
                                 for i in 0..NUMBER_OF_ELEVATORS {
                                     if locked_channels[i].is_some() {
-                                        let light_matrix = self.make_light_matrix(locked_requests.clone());
-                                        locked_channels[i].clone().unwrap()
+                                        let light_matrix =
+                                            self.make_light_matrix(locked_requests.clone());
+                                        locked_channels[i]
+                                            .clone()
+                                            .unwrap()
                                             .0
                                             .send(light_matrix)
                                             .unwrap();
-                                        dprintln!("[MASTER]\tSent light matrix to slave {}",i);
+                                        dprintln!("[MASTER]\tSent light matrix to slave {}", i);
                                     }
                                 }
                             }
-
 
                             // Recieves an updated state from slave
                             Message::StateUpdate(new_state) => {
                                 let mut locked_requests = self.requests.lock().unwrap();
                                 locked_requests.states[slave_number] = new_state;
 
-                                match self.update_backup(locked_requests.clone()){
-                                    Ok(_) => {},
+                                match self.update_backup(locked_requests.clone()) {
+                                    Ok(_) => {}
                                     Err(_) => self.master_to_backup_tx = None,
                                 }
                                 dprintln!("[MASTER]\tNew state update from slave:\t{}", new_state);
 
-                            
-                                let nxt_order = locked_requests.get_next_order(slave_number);
-                                match nxt_order {
-                                    Some(_) => {
-                                        let message = Message::NewOrder(nxt_order.unwrap());
-                                        locked_channels[slave_number].clone().unwrap()
+                                match locked_requests.get_next_order(slave_number) {
+                                    Ok(Some(next_order)) => {
+                                        let message = Message::NewOrder(next_order);
+                                        locked_channels[slave_number]
+                                            .clone()
+                                            .unwrap()
                                             .0
                                             .send(message)
                                             .unwrap();
-                                        dprintln!("[MASTER]\tNew order message sent to slave:{}, order{}", slave_number, nxt_order.unwrap());
+                                        dprintln!(
+                                            "[MASTER]\tNew order message sent to slave:{}, order{}",
+                                            slave_number,
+                                            next_order
+                                        );
                                     }
-                                    None => {
-                                        dprintln!("[MASTER]\tNo orders available for slave:\t{}", slave_number);
+                                    Ok(None) => {
+                                        dprintln!(
+                                            "[MASTER]\tNo orders available for slave:\t{}",
+                                            slave_number
+                                        );
+                                    }
+
+                                    Err(e) => {
+                                        dprintln!(
+                                            "[MASTER]\tFailed to get next order for slave: {}",
+                                            e
+                                        );
                                     }
                                 }
-
                             }
 
-                            // Removes an disconected slave
-                            Message::Error(e) => {
-                                match e {
-                                    tcp::ErrorState::Network => {
-                                        self.requests.lock().unwrap().states[slave_number].behaviour = ElevatorBehaviour::OutOfOrder;
+                            // Removes a disconected slave
+                            Message::Error(e) => match e {
+                                ErrorState::Network => {
+                                    self.requests.lock().unwrap().states[slave_number].behaviour =
+                                        ElevatorBehaviour::OutOfOrder;
 
-                                        match self.update_backup(self.requests.lock().unwrap().clone()){
-                                            Ok(_) => {},
-                                            Err(_) => self.master_to_backup_tx = None,
-                                        }
-                                        
-                                        dprintln!("[MASTER]\tSlave {} disconnected", slave_number);
-                                        locked_channels[slave_number] = None;
-                                    },
-                                    tcp::ErrorState::EmergancyStop => {
-                                        dprintln!("[MASTER]\tSlave {} has emergancy stop", slave_number);
-                                        self.requests.lock().unwrap().states[slave_number].behaviour = ElevatorBehaviour::OutOfOrder;
+                                    match self.update_backup(self.requests.lock().unwrap().clone())
+                                    {
+                                        Ok(_) => {}
+                                        Err(_) => self.master_to_backup_tx = None,
+                                    }
 
-                                        match self.update_backup(self.requests.lock().unwrap().clone()){
-                                            Ok(_) => {},
-                                            Err(_) => self.master_to_backup_tx = None,
-                                        }
-                                    },
+                                    dprintln!("[MASTER]\tSlave {} disconnected", slave_number);
+                                    locked_channels[slave_number] = None;
                                 }
+                                ErrorState::EmergancyStop => {
+                                    dprintln!(
+                                        "[MASTER]\tSlave {} has emergancy stop",
+                                        slave_number
+                                    );
+                                    self.requests.lock().unwrap().states[slave_number].behaviour =
+                                        ElevatorBehaviour::OutOfOrder;
 
-                            }
+                                    match self.update_backup(self.requests.lock().unwrap().clone())
+                                    {
+                                        Ok(_) => {}
+                                        Err(_) => self.master_to_backup_tx = None,
+                                    }
+                                }
+                            },
                             _ => {
                                 dprintln!(
                                     "[MASTER]\tReceived unexpected message from slave {:#?}",
                                     message
                                 );
                             }
-
                         }
                     }
-                    Err(_) => {}
+                    Err(e) => match e {
+                        cbc::TryRecvError::Empty => {}
+                        cbc::TryRecvError::Disconnected => {
+                            dprintln!("[MASTER]\tSlave {} disconnected", slave_number);
+                            locked_channels[slave_number] = None;
+                        }
+                    },
                 }
             }
 
@@ -455,86 +354,118 @@ impl Master {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
-    
-    /// Tries to connect to a new backup server. If connection is found, a new backup channel is set. If no connection is found, the function will try again in the next iteration.
+
+    /// Tries to connect to a new backup server. If connection is found, a new backup channel is set
+    /// If no connection is found, the function will try again in the next iteration
     fn try_connect_to_new_backup(&mut self) {
-        let backup_ip_list: Vec<SocketAddr> = self.config
+        let backup_ip_list: Vec<SocketAddr> = self
+            .config
             .elevator_ip_list
             .iter()
             .map(|ip| format!("{}:{}", ip, self.config.backup_port))
             .map(|addr| addr.parse().expect("Failed to parse IP address"))
             .collect();
-    
+
         for backup_ip in backup_ip_list {
-            match TcpStream::connect_timeout(&backup_ip, Duration::from_millis(self.config.tcp_timeout_ms)) {
+            match TcpStream::connect_timeout(
+                &backup_ip,
+                Duration::from_millis(self.config.tcp_timeout_ms),
+            ) {
                 Ok(backup_socket) => {
                     // Create channel for backup connection
                     let (master_to_backup_tx, master_to_backup_rx) = cbc::unbounded();
                     let (backup_disconected_tx, backup_disconected_rx) = cbc::unbounded();
 
-                    spawn_thread_for_backup_connection(backup_socket, master_to_backup_rx,backup_disconected_tx);
-    
+                    spawn_thread_for_backup_connection(
+                        backup_socket,
+                        master_to_backup_rx,
+                        backup_disconected_tx,
+                    );
+
                     dprintln!("[MASTER]\tConnected to backup at {}", backup_ip);
                     self.master_to_backup_tx = Some(master_to_backup_tx);
-                    self.backup_disconected_rx=backup_disconected_rx;
+                    self.backup_disconected_rx = backup_disconected_rx;
                     return;
                 }
-                Err(_e) => { continue; }
+                Err(_e) => {
+                    continue;
+                }
             }
         }
     }
 }
-
+impl FmtDisplay for Master {
+    fn fmt(&self, f: &mut FmtFormatter) -> FmtResult {
+        write!(
+            f,
+            "Master:\n\
+            \tConfig:\t{}\n\
+            \tRequests:\t{:?}\n\
+            \tSlave channels:\t{:?}\n\
+            \tMaster to backup tx:\t{:?}\n\
+            \tBackup disconected rx:\t{:?}",
+            self.config,
+            self.requests,
+            self.slave_channels,
+            self.master_to_backup_tx,
+            self.backup_disconected_rx
+        )
+    }
+}
 
 /// Spawns a thread for handling the TcpStream connection to a slave.
 fn spawn_thread_for_slave_connection(
     mut stream: TcpStream,
-    slave_to_master_tx: cbc::Sender<tcp::Message>,
-    master_to_slave_rx: cbc::Receiver<tcp::Message>,
+    slave_to_master_tx: cbc::Sender<Message>,
+    master_to_slave_rx: cbc::Receiver<Message>,
 ) {
     let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
     // TTL is set to 3 to avoid packages being forwarded to other networks
     stream.set_ttl(3).expect("Failed to set TTL on stream");
-    stream.set_nodelay(true).expect("Failed to set nodelay on stream");
-    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+    // Dissables the Nagle's algorithm to reduce latency.
+    stream
+        .set_nodelay(true)
+        .expect("Failed to set nodelay on stream");
+    stream
+        .set_nonblocking(true)
+        .expect("Failed to set non-blocking mode on stream");
 
-    spawn(move || {
-        loop {
-            match stream.read(&mut buffer) {
-                Ok(size) => {
-                    if size > 0 {
-                        let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
-                            .expect("[MASTER]\tFailed to deserialize message from slave");
-                        slave_to_master_tx.send(msg).unwrap();
-                    }
-                }
-                Err(e) => {
-                    match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {  }
-                        _ => {
-                            dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
-                            slave_to_master_tx.send(tcp::Message::Error(tcp::ErrorState::Network)).unwrap();
-                        }
-                    }
-
+    spawn(move || loop {
+        match stream.read(&mut buffer) {
+            Ok(size) => {
+                if size > 0 {
+                    let msg: Message = bincode::deserialize::<Message>(&buffer[..size])
+                        .expect("[MASTER]\tFailed to deserialize message from slave");
+                    slave_to_master_tx.send(msg).unwrap();
                 }
             }
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::WouldBlock => {}
+                _ => {
+                    dprintln!("[SLAVE]\t\tFailed to read from stream: {}", e);
+                    slave_to_master_tx
+                        .send(Message::Error(ErrorState::Network))
+                        .unwrap();
+                }
+            },
+        }
 
-            match master_to_slave_rx.try_recv() {
-                Ok(message) => {
-                    let encoded: Vec<u8> =
-                        bincode::serialize(&message).expect("Failed to serialize message to slave");
-                    match stream.write(&encoded) {
-                        Ok(_) => {},
-                        Err(_e) => {
-                            slave_to_master_tx.send(Message::Error(tcp::ErrorState::Network)).unwrap();
-                        }
+        match master_to_slave_rx.try_recv() {
+            Ok(message) => {
+                let encoded: Vec<u8> =
+                    bincode::serialize(&message).expect("Failed to serialize message to slave");
+                match stream.write_all(&encoded) {
+                    Ok(_) => {}
+                    Err(_e) => {
+                        slave_to_master_tx
+                            .send(Message::Error(ErrorState::Network))
+                            .unwrap();
                     }
                 }
-                Err(_e) => {
-                    continue;
-                }
+            }
+            Err(_e) => {
+                continue;
             }
         }
     });
@@ -543,36 +474,39 @@ fn spawn_thread_for_slave_connection(
 /// Spawns a thread for handling the TcpStream connection to a backup.
 fn spawn_thread_for_backup_connection(
     mut stream: TcpStream,
-    master_to_backup_rx: cbc::Receiver<tcp::Message>,
+    master_to_backup_rx: cbc::Receiver<Message>,
     backup_disconected_tx: cbc::Sender<bool>,
 ) {
     // TTL is set to 3 to avoid packages being forwarded to other networks
     stream.set_ttl(3).expect("Failed to set TTL on stream");
-    stream.set_nodelay(true).expect("Failed to set nodelay on stream");
-    stream.set_nonblocking(true).expect("Failed to set non-blocking mode on stream");
+    // Dissables the Nagle's algorithm to reduce latency.
+    stream
+        .set_nodelay(true)
+        .expect("Failed to set nodelay on stream");
+    stream
+        .set_nonblocking(true)
+        .expect("Failed to set non-blocking mode on stream");
 
-    spawn (move ||{
-        loop {
-            match master_to_backup_rx.recv() {
-                Ok(message) => {
-                    let encoded: Vec<u8> = bincode::serialize(&message).expect("Failed to serialize message to backup");
-                    match stream.write(&encoded){
-                        Ok(_)=>{
-                            dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
-                        }
-                        Err(_)=>{
-                            dprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
-                            backup_disconected_tx.send(true).unwrap(); 
-                            return;
-                        }
+    spawn(move || loop {
+        match master_to_backup_rx.recv() {
+            Ok(message) => {
+                let encoded: Vec<u8> =
+                    bincode::serialize(&message).expect("Failed to serialize message to backup");
+                match stream.write(&encoded) {
+                    Ok(_) => {
+                        dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
                     }
-                    dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
+                    Err(_) => {
+                        dprintln!("[MASTER]\tFailed to send to backup, asuming dead connection");
+                        backup_disconected_tx.send(true).unwrap();
+                        return;
+                    }
                 }
-                Err(_) => {
-                    dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
-                }
+                dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
+            }
+            Err(_) => {
+                //dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
             }
         }
     });
 }
-
