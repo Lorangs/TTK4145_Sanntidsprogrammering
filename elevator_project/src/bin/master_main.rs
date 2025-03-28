@@ -18,11 +18,11 @@ fn main() {
     dprintln!("Argument:\t{}", args.len());
 
     if args.len() != 1 {
-        match serde_json::from_str(&args[1]) {
+        match serde_json::from_str(&args[2]) {
             Ok(or) => order_requests = or,
             Err(_e) => {
                 Command::new("cargo")
-                    .args(["run", "--bin", "master_main", &args[1]])
+                    .args(["run", "--release", "--bin", "master_main", &args[2]])
                     .spawn()
                     .expect("Failed to start master_main");
                 return;
@@ -41,7 +41,7 @@ fn main() {
     dprintln!("[MASTER]\tMaster failed, restarting as backup");
     drop(master);
     Command::new("cargo")
-        .args(["run", "--bin", "backup_main"])
+        .args(["run", "--release", "--bin", "backup_main"])
         .spawn()
         .expect("Failed to start backup_main");
 }

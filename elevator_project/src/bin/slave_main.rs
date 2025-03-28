@@ -20,7 +20,7 @@ fn main() {
     dprintln!("[SLAVE]\t\tslave failed, restarting slave\n");
 
     Command::new("cargo")
-        .args(["run", "--bin", "slave_main", args[1].as_str()])
+        .args(["run", "--release", "--bin", "slave_main", args[1].as_str()])
         .spawn()
         .expect("Failed to start slave_main");
 }
