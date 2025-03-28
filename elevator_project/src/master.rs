@@ -170,7 +170,7 @@ impl Master {
             if self.master_to_backup_tx.is_none() {
                 self.try_connect_to_new_backup();
             }
-            match (self.heartbeat_rx.try_recv()) {
+            match self.heartbeat_rx.try_recv() {
                 Ok(msg)=>{
                     for ip in msg.lost{
                         if ip=="Backup".to_string(){
@@ -178,8 +178,9 @@ impl Master {
                         }
                         else {
                             println!("Slave {} disconected",ip);
-                            self.requests.lock().unwrap().states[ip.parse::<usize>().unwrap()].behaviour =
-                            ElevatorBehaviour::OutOfOrder;
+                            let dead_slave=ip.trim().parse::<usize>().unwrap();
+                            self.requests.lock().unwrap().states[dead_slave].behaviour =
+                                ElevatorBehaviour::OutOfOrder;
                             match self.update_backup(self.requests.lock().unwrap().clone()) {
                                 Ok(_) => {}
                                 Err(_) => self.master_to_backup_tx = None,

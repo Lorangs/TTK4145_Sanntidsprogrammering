@@ -19,7 +19,6 @@ pub struct Slave {
     pub config: Config,
     pub elevator: e::Elevator,
     pub state: ElevatorState,
-    slave_number: String,
     obstruction: bool,
     stop_button: bool,
     next_order: CallButton,
@@ -47,14 +46,13 @@ impl Slave {
         
         let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
         heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
-        heartbeat::send_alive(slave_num.clone(),config.heartbeat_port);   
+        heartbeat::send_alive(slave_num,config.heartbeat_port);   
         
         let mut slave = Self {
             config: conf,
             elevator: elev,
             next_order: CallButton { floor: 0, call: 0 }, // Need to be initialized, but not used until a new order is received
             state: ElevatorState::init(),
-            slave_number: slave_num,
             obstruction: false,
             stop_button: false,
             channels: chs,
