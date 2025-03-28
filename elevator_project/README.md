@@ -1,5 +1,17 @@
 # TTK4145_Sanntidsprogrammering
 
+## How to run 
+Run the program with the following command for master pc:
+```bash
+cargo run --bin main 0
+```
+
+and 
+```bash
+cargo run --bin main [FLAG] <elevator_id>
+```
+for slave and backup pc, where [FLAG] is computer number.
+
 ## Prerequisites
 This program depends on the hall_request_assigner program, which is released as source code in the TTK4145 course.
 hall_request_assigner is an optimization algorithm that assigns orders to elevators. This program must be compiled before starting by running inside the hall_request_assigner repository: ./build.sh
@@ -17,7 +29,6 @@ the slaves. The slaves is following orders as long as they are connected to the 
 The software is designed to use as few external libraries as possible, except for:
 - Crossbeam – A channel library for efficient inter-thread communication.
 - Serde – A serialization/deserialization library.
-- Some additional provided libraries.
 This to ceep the code as simple and meintainable as possible.
 
 ## Synchronization
