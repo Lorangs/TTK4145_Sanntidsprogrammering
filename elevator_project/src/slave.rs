@@ -381,7 +381,7 @@ impl Slave {
                             Message::NewOrder(callbutton) => {
                                 if self.state.behaviour == ElevatorBehaviour::Idle {
                                     self.next_order = callbutton;
-                                    dprintln!("[SLAVE]\t floor: {:#?}, next_order: {:#?}", self.state.floor, self.next_order.floor);
+                                    dprintln!("[SLAVE]\tfloor: {:#?}, next_order: {:#?}", self.state.floor, self.next_order.floor);
                                     if self.state.floor == self.next_order.floor {
                                         self.set_behaviour(ElevatorBehaviour::DoorOpen);
                                         self.elevator.door_light(true);

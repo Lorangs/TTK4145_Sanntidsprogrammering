@@ -18,8 +18,8 @@ fn main() {
                 .spawn()
                 .expect("Failed to start master_main");
         }
-        Err(e) => {
-            dprintln!("[BACKUP]\tBackup loop failed: {:?}", e);
+        Err(_e) => {
+            dprintln!("[BACKUP]\tBackup loop failed: {:?}", _e);
             dprintln!("[BACKUP]\tRestarting backup");
             Command::new("cargo")
                 .args(["run", "--bin", "backup_main"])

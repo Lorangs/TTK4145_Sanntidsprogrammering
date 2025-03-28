@@ -30,16 +30,19 @@ fn main() {
         }
         dprintln!("[MASTER]\tOrder requests:\t{:?}", order_requests);
     } else {
-        dprintln!("I am a new master");
+        dprintln!("[MASTER]\tI am a new master");
     }
 
-    let mut master = Master::init(&config, order_requests).unwrap();
-    dprintln!("[MASTER]\tMaster initialized");
-    master.master_loop();
+    match Master::init(&config, order_requests) {
+        Ok(mut master) => { 
+            dprintln!("[MASTER]\tMaster initialized");
+            master.master_loop();
+        }
+        Err(_) => {} // continue to start backup
+    }
 
     // If master loop returns, master has failed. Start as backup instead.
     dprintln!("[MASTER]\tMaster failed, restarting as backup");
-    drop(master);
     Command::new("cargo")
         .args(["run", "--bin", "backup_main"])
         .spawn()

@@ -91,7 +91,7 @@ impl Backup {
                 Ok(msg)=>{
                     for ip in msg.lost{
                         if ip.trim()=="Master".to_string(){
-                            println!("Master disconected");
+                            dprintln!("[BACKUP]\tNo heartbeat from Master detected.");
                             return Ok(self.orders.clone());
                         }
                     }

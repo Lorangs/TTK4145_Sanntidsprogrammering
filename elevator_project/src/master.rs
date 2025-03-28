@@ -5,7 +5,6 @@ use std::fmt::{Display as FmtDisplay, Formatter as FmtFormatter, Result as FmtRe
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::result::Result;
-use std::string::String;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Duration;
@@ -24,17 +23,19 @@ pub struct Master {
         Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>>,
     master_to_backup_tx: Option<cbc::Sender<Message>>,
     backup_disconected_rx: cbc::Receiver<bool>,
+    error_rx: cbc::Receiver<bool>,
     heartbeat_rx: cbc::Receiver<udpnet::peers::PeerUpdate>,
 }
 
 impl Master {
     /// Initialize a new master unit
     /// Will start as a lone master if no backup is found
-    pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, String> {
+    pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, &str> {
         
         let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
         heartbeat::recieve_online_status(heart_update_tx, config.heartbeat_port);
         
+        let (error_tx, error_rx) = cbc::unbounded::<bool>();
         let mut master = Master {
             config: config.clone(),
             requests: Arc::new(Mutex::new(order_requests)),
@@ -42,6 +43,7 @@ impl Master {
             master_to_backup_tx: None,
             backup_disconected_rx: cbc::unbounded().1,
             heartbeat_rx: heart_update_rx,
+            error_rx:  error_rx
         };
 
         master.try_connect_to_new_backup();
@@ -57,9 +59,16 @@ impl Master {
 
         // Thread for listening for new slave connections
         spawn(move || {
-            let listener =
-                TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str())
-                    .expect("Failed to bind");
+            let listener;
+            match TcpListener::bind("0.0.0.0".to_string() + ":" + master_port.to_string().as_str()) {
+                Ok(l) => { listener = l},
+                Err(_e) => { 
+                    dprintln!("[MASTER]\tReturning on error");
+                    let _ = error_tx.send(true);
+                    return;
+                }
+            };
+                    
 
             for stream in listener.incoming() {
                 let slave_number: usize;
@@ -69,7 +78,7 @@ impl Master {
                         slave_number = ip;
                     }
                     std::net::IpAddr::V6(_ip) => {
-                        panic!("Fant IP_V6 adresse")
+                        panic!("Found IP_V6 adress")
                     } // Panic for invalid ip
                 };
 
@@ -107,7 +116,7 @@ impl Master {
                         drop(locked_requests);
                         drop(locked_channel);
                     }
-                    Err(_) => {
+                    Err(_e) => {
                         dprintln!("[MASTER]\tFailed to establish connection to slave");
                     }
                 }
@@ -170,15 +179,23 @@ impl Master {
             if self.master_to_backup_tx.is_none() {
                 self.try_connect_to_new_backup();
             }
+            match self.error_rx.try_recv() {
+                Ok(msg) => {
+                    if msg {
+                        return;
+                    }
+                }
+                Err(_) => {} // continue
+            }
             match self.heartbeat_rx.try_recv() {
                 Ok(msg)=>{
                     for ip in msg.lost{
                         if ip.trim()=="Backup".to_string(){
-                            println!("Backup disconnected");
+                            dprintln!("[MASTER]\tBackup disconnected");
                             self.master_to_backup_tx = None;
                         }
                         else {
-                            println!("Slave {} disconected",ip);
+                            dprintln!("[MASTER]\tSlave: {} disconnected",ip);
                             match ip.trim().parse::<usize>(){
                                 Ok(dead_slave) =>{
                                     self.requests.lock().unwrap().states[dead_slave].behaviour =
@@ -188,7 +205,7 @@ impl Master {
                                         Err(_) => self.master_to_backup_tx = None,
                                     }
                                 }
-                                Err(_) =>{dprintln!("[Master] Faled to parse slave number")}
+                                Err(_) =>{dprintln!("[Master]\tFaled to parse slave number")}
                             }
                         }
                     }
