@@ -8,7 +8,7 @@ cargo run --bin main 0
 
 and 
 ```bash
-cargo run --bin main [FLAG] <elevator_id>
+cargo run --bin main [FLAG] 
 ```
 for slave and backup pc, where [FLAG] is computer number.
 
