@@ -161,8 +161,8 @@ impl Slave {
         match callbutton.call {
             HALL_DOWN | HALL_UP => match self.master_channels.as_mut().unwrap().0.send(message) {
                 Ok(_) => {}
-                Err(e) => {
-                    dprintln!("[SLAVE]\t\tFailed to send order: {}", e);
+                Err(_e) => {
+                    dprintln!("[SLAVE]\t\tFailed to send order: {}", _e);
                     self.master_channels = None;
                 }
             },
@@ -197,8 +197,8 @@ impl Slave {
                 Ok(_) => {
                     dprintln!("[SLAVE]\t\tSent order complite");
                 }
-                Err(e) => {
-                    dprintln!("[SLAVE]\t\tFailed to send order complete: {}", e)
+                Err(_e) => {
+                    dprintln!("[SLAVE]\t\tFailed to send order complete: {}", _e)
                 }
             }
         }
@@ -214,8 +214,8 @@ impl Slave {
 
         match self.master_channels.as_mut().unwrap().0.send(message) {
             Ok(_) => {}
-            Err(e) => {
-                dprintln!("[SLAVE]\t\tFailed to send stop button: {}", e)
+            Err(_e) => {
+                dprintln!("[SLAVE]\t\tFailed to send stop button: {}", _e)
             }
         }
     }
@@ -254,8 +254,8 @@ impl Slave {
         let message = Message::StateUpdate(self.state);
         match self.master_channels.as_mut().unwrap().0.send(message) {
             Ok(_) => {}
-            Err(e) => {
-                dprintln!("[SLAVE]\t\tFailed to send status update: {}", e)
+            Err(_e) => {
+                dprintln!("[SLAVE]\t\tFailed to send status update: {}", _e)
             }
         }
     }

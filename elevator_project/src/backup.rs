@@ -52,8 +52,8 @@ impl Backup {
                         dprintln!("[BACKUP]\tConnected to master");
                         return Ok(backup);
                     }
-                    Err(e) => {
-                        dprintln!("[BACKUP]\tError:\t{}", e);
+                    Err(_e) => {
+                        dprintln!("[BACKUP]\tError:\t{}", _e);
                         sleep(Duration::from_secs(2));
                     }
                 }
@@ -87,7 +87,7 @@ impl Backup {
                     return Ok(self.orders.clone());
                 }
             }
-            match (self.heartbeat_rx.try_recv()) {
+            match self.heartbeat_rx.try_recv() {
                 Ok(msg)=>{
                     for ip in msg.lost{
                         if ip.trim()=="Master".to_string(){
@@ -139,8 +139,8 @@ fn spawn_thread_for_master_connection(
                         dprintln!("[BACKUP]\tReceived message from master: {:#?}", msg);
                         match master_to_backup_tx.send(msg) {
                             Ok(_) => {}
-                            Err(e) => {
-                                dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
+                            Err(_e) => {
+                                dprintln!("[BACKUP]\tFailed to send message to backup: {}", _e);
                                 break;
                             }
                         }
@@ -149,8 +149,8 @@ fn spawn_thread_for_master_connection(
                         let msg = Message::Error(ErrorState::Network);
                         match master_to_backup_tx.send(msg) {
                             Ok(_) => {}
-                            Err(e) => {
-                                dprintln!("[BACKUP]\tFailed to send message to backup: {}", e);
+                            Err(_e) => {
+                                dprintln!("[BACKUP]\tFailed to send message to backup: {}", _e);
                                 break;
                             }
                         }

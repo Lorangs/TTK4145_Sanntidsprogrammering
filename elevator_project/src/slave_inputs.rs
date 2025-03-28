@@ -97,8 +97,8 @@ pub fn spawn_thread_for_master_connection(
                         Ok(_) => {
                             dprintln!("[SLAVE]\t\tSent message to master: {:#?}", message);
                         }
-                        Err(e) => {
-                            dprintln!("[SLAVE]\t\tFailed to write to stream: {}", e);
+                        Err(_e) => {
+                            dprintln!("[SLAVE]\t\tFailed to write to stream: {}", _e);
                             master_to_slave_tx
                                 .send(Message::Error(ErrorState::Network))
                                 .unwrap();

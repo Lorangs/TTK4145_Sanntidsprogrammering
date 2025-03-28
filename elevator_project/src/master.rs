@@ -293,11 +293,8 @@ impl Master {
                                         );
                                     }
 
-                                    Err(e) => {
-                                        dprintln!(
-                                            "[MASTER]\tFailed to get next order for slave: {}",
-                                            e
-                                        );
+                                    Err(_e) => {
+                                        dprintln!("[MASTER]\tFailed to get next order for slave: {}", _e);
                                     }
                                 }
                             }

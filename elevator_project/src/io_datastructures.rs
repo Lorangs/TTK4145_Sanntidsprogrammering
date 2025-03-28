@@ -327,8 +327,8 @@ impl OrderRequests {
     pub fn to_json_string(&self) -> String {
         match serde_json::to_string(&self) {
             Ok(json) => json,
-            Err(e) => {
-                dprintln!("[MASTER]\tFailed to serialize OrderRequests to JSON: {}", e);
+            Err(_e) => {
+                dprintln!("[MASTER]\tFailed to serialize OrderRequests to JSON: {}", _e);
                 dprintln!("[MASTER]\tReturning empty JSON string");
                 String::new()
             }
