@@ -173,7 +173,7 @@ impl Master {
             match self.heartbeat_rx.try_recv() {
                 Ok(msg)=>{
                     for ip in msg.lost{
-                        if ip=="backup".to_string(){
+                        if ip=="Backup".to_string(){
                             println!("Backup disconected");
                             self.master_to_backup_tx = None;
                         }
