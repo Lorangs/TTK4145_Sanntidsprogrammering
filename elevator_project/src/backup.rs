@@ -39,7 +39,7 @@ impl Backup {
                             cbc::unbounded::<Message>();
                         let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
                         heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
-                        heartbeat::send_alive("backup".to_string(),config.heartbeat_port); 
+                        heartbeat::send_alive("Backup".to_string(),config.heartbeat_port); 
                         spawn_thread_for_master_connection(stream, master_to_backup_tx);
 
                         let backup = Backup {

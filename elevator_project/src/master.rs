@@ -173,17 +173,22 @@ impl Master {
             match self.heartbeat_rx.try_recv() {
                 Ok(msg)=>{
                     for ip in msg.lost{
-                        if ip=="Backup".to_string(){
+                        if ip=="backup".to_string(){
                             println!("Backup disconected");
+                            self.master_to_backup_tx = None;
                         }
                         else {
                             println!("Slave {} disconected",ip);
-                            let dead_slave=ip.trim().parse::<usize>().unwrap();
-                            self.requests.lock().unwrap().states[dead_slave].behaviour =
-                                ElevatorBehaviour::OutOfOrder;
-                            match self.update_backup(self.requests.lock().unwrap().clone()) {
-                                Ok(_) => {}
-                                Err(_) => self.master_to_backup_tx = None,
+                            match ip.trim().parse::<usize>(){
+                                Ok(dead_slave) =>{
+                                    self.requests.lock().unwrap().states[dead_slave].behaviour =
+                                        ElevatorBehaviour::OutOfOrder;
+                                    match self.update_backup(self.requests.lock().unwrap().clone()) {
+                                        Ok(_) => {}
+                                        Err(_) => self.master_to_backup_tx = None,
+                                    }
+                                }
+                                Err(_) =>{dprintln!("[Master] Faled to parse slave number")}
                             }
                         }
                     }
@@ -500,7 +505,7 @@ fn spawn_thread_for_backup_connection(
                 dprintln!("[MASTER]\tSent order to backup: {:#?}", message);
             }
             Err(_) => {
-                dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
+                //dprintln!("[MASTER]\tFailed to read from master_to_slave_rx channel");
             }
         }
     });
