@@ -70,6 +70,7 @@ pub struct Config {
     pub elevator_ip_list: [Ipv4Addr; NUMBER_OF_ELEVATORS],
     pub master_port: u16,
     pub backup_port: u16,
+    pub heartbeat_port: u16,
     pub elevator_port: u16,
     pub door_open_duration_s: u64,
     pub input_poll_rate_ms: u64,
@@ -84,6 +85,7 @@ impl Display for Config {
             Elevator IP list:\t\t{:?}\n\t\
             Master port:\t\t\t{}\n\t\
             Backup port:\t\t\t{}\n\t\
+            Heartbeat port:\t\t\t{}\n\t\
             Elevator port:\t\t\t{}\n\t\
             Door open duration [s]:\t\t{}\n\t\
             Input poll rate [ms]:\t\t{}\n\t\
@@ -92,6 +94,7 @@ impl Display for Config {
             self.elevator_ip_list,
             self.master_port,
             self.backup_port,
+            self.heartbeat_port,
             self.elevator_port,
             self.door_open_duration_s,
             self.input_poll_rate_ms,

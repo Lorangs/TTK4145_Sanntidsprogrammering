@@ -5,3 +5,5 @@ pub mod io_datastructures;
 pub mod master;
 pub mod slave;
 pub mod slave_inputs;
+pub mod heartbeat;
+

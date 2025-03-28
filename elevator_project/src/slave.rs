@@ -3,6 +3,7 @@ use crate::io_datastructures::{
     CallButton, Direction, ElevatorBehaviour, ElevatorState, ErrorState, Message,
 };
 use crate::slave_inputs;
+use crate::heartbeat;
 use crossbeam_channel as cbc;
 use debug_print::debug_println as dprintln;
 use driver_rust::elevio::elev::{
@@ -11,12 +12,14 @@ use driver_rust::elevio::elev::{
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
+use network_rust::udpnet;
 
 #[derive(Debug)]
 pub struct Slave {
     pub config: Config,
     pub elevator: e::Elevator,
     pub state: ElevatorState,
+    slave_number: String,
     obstruction: bool,
     stop_button: bool,
     next_order: CallButton,
@@ -24,13 +27,14 @@ pub struct Slave {
     master_channels: Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>, // If None the elevator is in local mode
     door_timer: (cbc::Sender<bool>, cbc::Receiver<bool>),
     motor_timeout: (cbc::Sender<bool>, cbc::Receiver<bool>),
+    heartbeat_rx: cbc::Receiver<udpnet::peers::PeerUpdate>,
     timestamp_prev_floor: Instant,
     light_matrix: [[bool; 2]; NUMBER_OF_FLOORS], // [Hall_UP, Hall_DOWN] for each floor
 }
 
 impl Slave {
     /// Initialize a new slave unit
-    pub fn init(config: &Config) -> Slave {
+    pub fn init(config: &Config, slave_num: String) -> Slave {
         let conf: Config = config.clone();
         let elev: e::Elevator = e::Elevator::init(
             ("localhost:".to_string() + config.elevator_port.to_string().as_str()).as_str(),
@@ -39,28 +43,34 @@ impl Slave {
         .expect("[SLAVE]\t\tFailed to initialize elevator");
 
         let chs: slave_inputs::SlaveChannels =
-            slave_inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms);
-
+        slave_inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms);
+        
+        let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
+        heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
+        heartbeat::send_alive(slave_num.clone(),config.heartbeat_port);   
+        
         let mut slave = Self {
             config: conf,
             elevator: elev,
             next_order: CallButton { floor: 0, call: 0 }, // Need to be initialized, but not used until a new order is received
             state: ElevatorState::init(),
+            slave_number: slave_num,
             obstruction: false,
             stop_button: false,
             channels: chs,
             master_channels: None,
             door_timer: cbc::unbounded::<bool>(),
             motor_timeout: cbc::unbounded::<bool>(),
+            heartbeat_rx: heart_update_rx,
             timestamp_prev_floor: Instant::now(),
             light_matrix: [[false; 2]; NUMBER_OF_FLOORS],
         };
-
+        
         // Turns all lights off
         slave.sync_hall_lights();
         slave.sync_cab_lights();
         slave.elevator.door_light(false);
-
+        
         // Initiate elevator position and lights to the nearest floor in downwards direction
         slave.state.behaviour = ElevatorBehaviour::Moving;
         slave.state.direction = Direction::Down;
@@ -82,16 +92,18 @@ impl Slave {
                 }
             }
         }
-
-
+        
+        
         slave.try_connect_to_new_master();
-
+        
         if slave.master_channels.is_none() {
             dprintln!("[SLAVE]\t\tNo master found. Starting in local operation mode.");
         } else {
             dprintln!("[SLAVE]\t\tConnected to master. Starting in normal operation mode.");
             slave.send_state_update();
         }
+        
+
         slave
     }
 
@@ -341,6 +353,26 @@ impl Slave {
                             dprintln!("[SLAVE]\t\tMotor timeout. Out of order.");
                             self.set_behaviour(ElevatorBehaviour::OutOfOrder);
                             self.send_state_update();
+                        }
+                    }
+
+                    //Detects a master disconection
+                    recv(self.heartbeat_rx)-> msg => {
+                        for ip in msg.unwrap().lost{
+                            if ip=="Master".to_string(){
+                                dprintln!("[SLAVE]\t\tNo heartbeat from master");
+                                dprintln!("[SLAVE]\t\tStarting in local operating mode");
+                                self.master_channels = None;
+
+                                // Turn off all hall lights since we are in local mode and no longer take hall orders
+                                for i in 0..NUMBER_OF_FLOORS {
+                                    self.elevator.call_button_light(i as u8, HALL_UP, false);
+                                    self.elevator.call_button_light(i as u8, HALL_DOWN, false);
+                                }
+                                if self.state.behaviour == ElevatorBehaviour::Idle{
+                                    self.start_moving_local();
+                                }                           
+                            }
                         }
                     }
 

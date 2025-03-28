@@ -10,11 +10,14 @@ use std::time::Duration;
 
 use crate::config::{Config, BUFFER_SIZE};
 use crate::io_datastructures::{ErrorState, Message, OrderRequests};
+use crate::heartbeat;
+use network_rust::udpnet;
 
 /// Struck for Backup unit.
 pub struct Backup {
     orders: OrderRequests,
     master_to_backup_rx: cbc::Receiver<Message>,
+    heartbeat_rx: cbc::Receiver<udpnet::peers::PeerUpdate>,
 }
 
 impl Backup {
@@ -34,13 +37,16 @@ impl Backup {
                     Ok(stream) => {
                         let (master_to_backup_tx, master_to_backup_rx) =
                             cbc::unbounded::<Message>();
+                        let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
+                        heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
+                        heartbeat::send_alive("backup".to_string(),config.heartbeat_port); 
+                        spawn_thread_for_master_connection(stream, master_to_backup_tx);
 
                         let backup = Backup {
                             orders: OrderRequests::init(),
                             master_to_backup_rx,
+                            heartbeat_rx: heart_update_rx,
                         };
-
-                        spawn_thread_for_master_connection(stream, master_to_backup_tx);
 
                         dprintln!("[BACKUP]\tConnected to master");
                         return Ok(backup);
@@ -80,6 +86,17 @@ impl Backup {
                     return Ok(self.orders.clone());
                 }
             }
+            match (self.heartbeat_rx.try_recv()) {
+                Ok(msg)=>{
+                    for ip in msg.lost{
+                        if ip=="Master".to_string(){
+                            println!("Master disconected");
+                            return Ok(self.orders.clone());
+                        }
+                    }
+                }
+                Err(_e)=>{} //No update yet
+            } 
         }
     }
 }

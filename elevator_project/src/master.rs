@@ -12,6 +12,8 @@ use std::time::Duration;
 
 use crate::config::{Config, BUFFER_SIZE, NUMBER_OF_ELEVATORS, NUMBER_OF_FLOORS};
 use crate::io_datastructures::{ElevatorBehaviour, ErrorState, Message, OrderRequests};
+use crate::heartbeat;
+use network_rust::udpnet;
 
 /// Struct for Master unit
 #[derive(Debug)]
@@ -22,21 +24,29 @@ pub struct Master {
         Arc<Mutex<[Option<(cbc::Sender<Message>, cbc::Receiver<Message>)>; NUMBER_OF_ELEVATORS]>>,
     master_to_backup_tx: Option<cbc::Sender<Message>>,
     backup_disconected_rx: cbc::Receiver<bool>,
+    heartbeat_rx: cbc::Receiver<udpnet::peers::PeerUpdate>,
 }
 
 impl Master {
     /// Initialize a new master unit
     /// Will start as a lone master if no backup is found
     pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, String> {
+        
+        let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
+        heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
+        
         let mut master = Master {
             config: config.clone(),
             requests: Arc::new(Mutex::new(order_requests)),
             slave_channels: Arc::new(Mutex::new([const { None }; NUMBER_OF_ELEVATORS])),
             master_to_backup_tx: None,
             backup_disconected_rx: cbc::unbounded().1,
+            heartbeat_rx: heart_update_rx,
         };
 
         master.try_connect_to_new_backup();
+
+        heartbeat::send_alive("Master".to_string(),config.heartbeat_port);
 
         let master_port: u16 = config.master_port;
         let ip_config_clone: [Ipv4Addr; NUMBER_OF_ELEVATORS] = config.elevator_ip_list;
@@ -160,6 +170,26 @@ impl Master {
             if self.master_to_backup_tx.is_none() {
                 self.try_connect_to_new_backup();
             }
+            match (self.heartbeat_rx.try_recv()) {
+                Ok(msg)=>{
+                    for ip in msg.lost{
+                        if ip=="Backup".to_string(){
+                            println!("Backup disconected");
+                        }
+                        else {
+                            println!("Slave {} disconected",ip);
+                            self.requests.lock().unwrap().states[ip.parse::<usize>().unwrap()].behaviour =
+                            ElevatorBehaviour::OutOfOrder;
+                            match self.update_backup(self.requests.lock().unwrap().clone()) {
+                                Ok(_) => {}
+                                Err(_) => self.master_to_backup_tx = None,
+                            }
+                        }
+                    }
+                }
+                Err(_e)=>{} //No update yet
+            } 
+
 
             for slave_number in 0..NUMBER_OF_ELEVATORS {
                 let mut locked_channels = self.slave_channels.lock().unwrap();
