@@ -36,11 +36,12 @@ impl Backup {
                 match stream {
                     Ok(stream) => {
                         let (master_to_backup_tx, master_to_backup_rx) =
-                            cbc::unbounded::<Message>();
-                        let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
-                        heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
-                        heartbeat::send_alive("Backup".to_string(),config.heartbeat_port); 
+                        cbc::unbounded::<Message>();
                         spawn_thread_for_master_connection(stream, master_to_backup_tx);
+                        
+                        let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
+                        heartbeat::recieve_online_status(heart_update_tx, config.heartbeat_port);
+                        heartbeat::send_alive("Backup".to_string(),config.heartbeat_port); 
 
                         let backup = Backup {
                             orders: OrderRequests::init(),
@@ -64,8 +65,8 @@ impl Backup {
     pub fn backup_loop(&mut self) -> Result<OrderRequests, cbc::RecvError> {
         loop {
             match self.master_to_backup_rx.recv() {
-                Ok(message) => {
-                    match message {
+                Ok(msg) => {
+                    match msg {
                         Message::Backup(data) => {
                             self.orders = data;
                             dprintln!("[BACKUP]\tUpdated orders: {:#?}", self.orders);
@@ -89,7 +90,7 @@ impl Backup {
             match (self.heartbeat_rx.try_recv()) {
                 Ok(msg)=>{
                     for ip in msg.lost{
-                        if ip=="Master".to_string(){
+                        if ip.trim()=="Master".to_string(){
                             println!("Master disconected");
                             return Ok(self.orders.clone());
                         }

@@ -45,7 +45,7 @@ impl Slave {
         slave_inputs::spawn_threads_for_slave_inputs(&elev, conf.input_poll_rate_ms);
         
         let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
-        heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
+        heartbeat::recieve_online_status(heart_update_tx, config.heartbeat_port);
         heartbeat::send_alive(slave_num,config.heartbeat_port);   
         
         let mut slave = Self {
@@ -354,10 +354,10 @@ impl Slave {
                         }
                     }
 
-                    //Detects a master disconection
+                    //Detects a master disconnection
                     recv(self.heartbeat_rx)-> msg => {
                         for ip in msg.unwrap().lost{
-                            if ip=="Master".to_string(){
+                            if ip.trim()=="Master".to_string(){
                                 dprintln!("[SLAVE]\t\tNo heartbeat from master");
                                 dprintln!("[SLAVE]\t\tStarting in local operating mode");
                                 self.master_channels = None;
@@ -435,8 +435,8 @@ impl Slave {
                         }
                     }
                 } // cbc::select
-            }
-            // if master_channels.is_some()
+            } // if master_channels.is_some()
+
 
             /************** local operation mode ***************/
             else {

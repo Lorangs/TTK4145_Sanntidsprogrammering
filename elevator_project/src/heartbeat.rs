@@ -20,7 +20,7 @@ pub fn send_alive(id: String, heartbeat_port: u16){
     }
 }
 
-pub fn recieve_online_statuses(heartbeat_update_tx: cbc::Sender<PeerUpdate>,heartbeat_listen_port: u16){
+pub fn recieve_online_status(heartbeat_update_tx: cbc::Sender<PeerUpdate>,heartbeat_listen_port: u16){
     {
         thread::spawn(move || {
             if udpnet::peers::rx(heartbeat_listen_port, heartbeat_update_tx).is_err() {

@@ -14,7 +14,7 @@ fn main() {
     match order_requests {
         Ok(order_requests) => {
             Command::new("cargo")
-                .args(["run", "--release", "--bin", "master_main", order_requests.to_json_string().as_str()])
+                .args(["run", "--bin", "master_main", order_requests.to_json_string().as_str()])
                 .spawn()
                 .expect("Failed to start master_main");
         }
@@ -22,7 +22,7 @@ fn main() {
             dprintln!("[BACKUP]\tBackup loop failed: {:?}", e);
             dprintln!("[BACKUP]\tRestarting backup");
             Command::new("cargo")
-                .args(["run", "--release", "--bin", "backup_main"])
+                .args(["run", "--bin", "backup_main"])
                 .spawn()
                 .expect("Failed to start backup_main");
         }

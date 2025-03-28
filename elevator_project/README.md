@@ -2,8 +2,7 @@
 
 ## Prerequisites
 This program depends on the hall_request_assigner program, which is released as source code in the TTK4145 course.
-hall_request_assigner is an optimization algorithm that assigns orders to elevators. This program must be compiled before starting by running:
-./hall_request_assigner/build.sh
+hall_request_assigner is an optimization algorithm that assigns orders to elevators. This program must be compiled before starting by running inside the hall_request_assigner repository: ./build.sh
 
 Remember to allow execution permissions for build.sh by running: (chmod +x hall_request_assigner/build.sh)
 

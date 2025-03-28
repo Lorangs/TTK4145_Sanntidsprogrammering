@@ -9,18 +9,18 @@ fn main() {
 
     if args[1] == 0.to_string() {
         Command::new("cargo")
-            .args(["run", "--release", "--bin", "master_main"])
+            .args(["run", "--bin", "master_main"])
             .spawn()
             .expect("Failed to start master_main");
     } else {
         Command::new("cargo")
-            .args(["run", "--release", "--bin", "backup_main"])
+            .args(["run", "--bin", "backup_main"])
             .spawn()
             .expect("Failed to start backup_main");
     }
 
     Command::new("cargo")
-        .args(["run", "--release", "--bin", "slave_main", args[1].as_str()])
+        .args(["run", "--bin", "slave_main", args[1].as_str()])
         .spawn()
         .expect("Failed to start slave_main");
 }

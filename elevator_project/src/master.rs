@@ -33,7 +33,7 @@ impl Master {
     pub fn init(config: &Config, order_requests: OrderRequests) -> Result<Master, String> {
         
         let (heart_update_tx, heart_update_rx) = cbc::unbounded::<udpnet::peers::PeerUpdate>();
-        heartbeat::recieve_online_statuses(heart_update_tx, config.heartbeat_port);
+        heartbeat::recieve_online_status(heart_update_tx, config.heartbeat_port);
         
         let mut master = Master {
             config: config.clone(),
@@ -173,8 +173,8 @@ impl Master {
             match self.heartbeat_rx.try_recv() {
                 Ok(msg)=>{
                     for ip in msg.lost{
-                        if ip=="Backup".to_string(){
-                            println!("Backup disconected");
+                        if ip.trim()=="Backup".to_string(){
+                            println!("Backup disconnected");
                             self.master_to_backup_tx = None;
                         }
                         else {
